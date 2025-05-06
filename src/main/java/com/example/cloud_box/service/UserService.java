@@ -32,4 +32,19 @@ public class UserService {
         return userRepository.save(user);
     }
 
+    public User authenticateUser(String username, String password) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("Invalid username or password"));
+        System.out.println("Username: " + username);
+        System.out.println("Password: " + password);
+        System.out.println("Encoded: " + user.getPassword());
+        System.out.println("Match: " + passwordEncoder.matches(password, user.getPassword()));
+
+        if (!passwordEncoder.matches(password, user.getPassword())) {
+            throw new RuntimeException("Invalid username or password");
+        }
+
+        return user;
+    }
+
 }
