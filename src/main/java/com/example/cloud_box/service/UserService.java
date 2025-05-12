@@ -1,5 +1,7 @@
 package com.example.cloud_box.service;
 
+import com.example.cloud_box.exception.InvalidCredentialsException;
+import com.example.cloud_box.exception.UserAlreadyExistsException;
 import com.example.cloud_box.model.User;
 import com.example.cloud_box.repository.UserRepository;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -17,11 +19,11 @@ public class UserService {
 
     public User registerUser(String username, String password, String email) {
         if (userRepository.findByUsername(username).isPresent()) {
-            throw new RuntimeException("Username already taken");
+            throw new UserAlreadyExistsException("Username already taken");
         }
 
         if (userRepository.findByEmail(email).isPresent()) {
-            throw new RuntimeException("Email already in use");
+            throw new UserAlreadyExistsException("Email already in use");
         }
 
         String encodedPassword = passwordEncoder.encode(password);
@@ -41,10 +43,9 @@ public class UserService {
         System.out.println("Match: " + passwordEncoder.matches(password, user.getPassword()));
 
         if (!passwordEncoder.matches(password, user.getPassword())) {
-            throw new RuntimeException("Invalid username or password");
+            throw new InvalidCredentialsException("Invalid username or password");
         }
-
-        return user;
+            return user;
     }
 
 }

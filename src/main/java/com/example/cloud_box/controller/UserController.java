@@ -1,5 +1,6 @@
 package com.example.cloud_box.controller;
 
+import com.example.cloud_box.exception.InvalidCredentialsException;
 import com.example.cloud_box.model.User;
 import com.example.cloud_box.service.UserService;
 import org.springframework.http.HttpStatus;
@@ -34,7 +35,6 @@ public class UserController {
         private String password;
         private String email;
 
-        // геттеры и сеттеры
         public String getUsername() { return username; }
         public void setUsername(String username) { this.username = username; }
 
@@ -94,12 +94,14 @@ public class UserController {
         }
     }
 
-
     @PostMapping("sign-in")
     public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest loginRequest) {
         User user = userService.authenticateUser(loginRequest.getUsername(), loginRequest.getPassword());
+
+        if (user == null) {
+            throw new InvalidCredentialsException("Invalid username or password");
+        }
+
         return ResponseEntity.ok(new LoginResponse(user.getUsername()));
     }
-
-
 }
