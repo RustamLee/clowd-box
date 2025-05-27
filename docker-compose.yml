@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  mysql-db:
+    image: mysql:8.0
+    container_name: mysql-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: MyPassword2025
+      MYSQL_DATABASE: cloud_box_db
+      MYSQL_USER: clouduser
+      MYSQL_PASSWORD: CloudUserPass2025
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+  redis:
+    image: redis:7.0
+    container_name: redis
+    restart: always
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+
+  minio:
+    image: minio/minio
+    container_name: minio
+    restart: always
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadminpass
+    ports:
+      - "9000:9000"
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+
+  minio-console:
+    image: minio/minio
+    container_name: minio-console
+    restart: always
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadminpass
+    ports:
+      - "9001:9001"
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+
+  cloud-box:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cloud-box
+    restart: always
+    ports:
+      - "8080:8080"
+    depends_on:
+      - mysql-db
+      - redis
+      - minio
+    environment:
+      SPRING_PROFILES_ACTIVE: default
+
+volumes:
+  mysql-data:
+  minio-data:

@@ -1,0 +1,7 @@
+package com.example.cloud_box.exception;
+
+public class ResourceNotFoundException extends RuntimeException {
+    public ResourceNotFoundException(String message) {
+        super(message);
+    }
+}
