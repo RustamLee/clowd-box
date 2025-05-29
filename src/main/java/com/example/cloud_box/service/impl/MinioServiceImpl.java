@@ -1,10 +1,17 @@
 package com.example.cloud_box.service.impl;
 
+import com.example.cloud_box.exception.InternalServerException;
+import com.example.cloud_box.exception.InvalidPathException;
+import com.example.cloud_box.exception.ResourceAlreadyExistsException;
 import com.example.cloud_box.exception.ResourceNotFoundException;
 import com.example.cloud_box.model.ResourceDto;
 import com.example.cloud_box.service.MinioService;
 import io.minio.*;
+import io.minio.errors.ErrorResponseException;
+import io.minio.errors.MinioException;
 import io.minio.messages.Bucket;
+import io.minio.messages.DeleteError;
+import io.minio.messages.DeleteObject;
 import io.minio.messages.Item;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
@@ -12,11 +19,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 @Service
 public class MinioServiceImpl implements MinioService {
@@ -53,6 +65,7 @@ public class MinioServiceImpl implements MinioService {
         throw new ResourceNotFoundException("Resource not found: " + path);
     }
 
+
     private ResourceDto buildResourceDto(Item item) {
         String objectName = item.objectName();
         Path path = Paths.get(objectName);
@@ -62,24 +75,351 @@ public class MinioServiceImpl implements MinioService {
 
         String type = objectName.endsWith("/") ? "DIRECTORY" : "FILE";
         Long size = objectName.endsWith("/") ? null : item.size();
-        String contentType = "application/octet-stream";
-        try {
-            StatObjectResponse stat = minioClient.statObject(
-                    StatObjectArgs.builder().bucket(bucketName).object(item.objectName()).build()
-            );
-            if (stat != null && stat.contentType() != null) {
-                contentType = stat.contentType();
-            }
-        } catch (Exception e) {
-        }
+
         return new ResourceDto(
                 parentPath,
                 name,
                 size,
-                contentType,
                 type
         );
     }
+
+
+    // This method deletes a resource (file or directory) from the Minio bucket.
+    @Override
+    public void deleteResource(String path) throws MinioException, IOException, NoSuchAlgorithmException, InvalidKeyException {
+        if (path == null || path.trim().isEmpty()) {
+            throw new IllegalArgumentException("Path cannot be null or empty");
+        }
+        if (path.endsWith("/")) {
+            boolean deleted = deleteFolder(path);
+            if (!deleted) {
+                throw new ResourceNotFoundException("Folder not found: " + path);
+            }
+        } else {
+            boolean deleted = deleteFile(path);
+            if (!deleted) {
+                throw new ResourceNotFoundException("File not found: " + path);
+            }
+        }
+
+    }
+
+
+    public boolean deleteFile(String path) {
+        try {
+            minioClient.statObject(StatObjectArgs.builder()
+                    .bucket(bucketName)
+                    .object(path)
+                    .build());
+        } catch (ErrorResponseException e) {
+            if ("NoSuchKey".equals(e.errorResponse().code())) {
+                return false;
+            }
+            throw new RuntimeException("MinIO error during statObject", e);
+        } catch (Exception e) {
+            throw new RuntimeException("Unexpected error while checking file", e);
+        }
+
+        try {
+            minioClient.removeObject(RemoveObjectArgs.builder()
+                    .bucket(bucketName)
+                    .object(path)
+                    .build());
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to delete file: " + path, e);
+        }
+
+        return true;
+    }
+
+    public boolean deleteFolder(String folderPath) {
+        List<DeleteObject> objectsToDelete = new ArrayList<>();
+
+        try {
+            Iterable<Result<Item>> results = minioClient.listObjects(
+                    ListObjectsArgs.builder()
+                            .bucket(bucketName)
+                            .prefix(folderPath)
+                            .recursive(true)
+                            .build()
+            );
+
+            for (Result<Item> result : results) {
+                objectsToDelete.add(new DeleteObject(result.get().objectName()));
+            }
+
+            // Проверка на существование объекта-папки (нулевого объекта)
+            try {
+                minioClient.statObject(StatObjectArgs.builder()
+                        .bucket(bucketName)
+                        .object(folderPath)
+                        .build());
+                objectsToDelete.add(new DeleteObject(folderPath));
+            } catch (ErrorResponseException e) {
+                if (!"NoSuchKey".equals(e.errorResponse().code())) {
+                    throw e;
+                }
+            }
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to list folder contents", e);
+        }
+
+        if (objectsToDelete.isEmpty()) {
+            return false;
+        }
+
+        try {
+            Iterable<Result<DeleteError>> results = minioClient.removeObjects(RemoveObjectsArgs.builder()
+                    .bucket(bucketName)
+                    .objects(objectsToDelete)
+                    .build());
+
+            for (Result<DeleteError> result : results) {
+                try {
+                    DeleteError error = result.get();
+                    throw new RuntimeException("Failed to delete object: " + error.objectName() + ", reason: " + error.message());
+                } catch (Exception e) {
+                    throw new RuntimeException("Error while deleting object", e);
+                }
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to delete folder: " + folderPath, e);
+        }
+
+        return true;
+    }
+
+
+    @Override
+    public void downloadResource(String path, HttpServletResponse response) throws Exception {
+        if (path == null || path.trim().isEmpty()) {
+            throw new IllegalArgumentException("Path cannot be null or empty");
+        }
+
+        if (path.endsWith("/")) {
+            downloadFolderAsZip(path, response);
+        } else {
+            downloadFileAsAttachment(path, response);
+        }
+    }
+
+
+    private void downloadFileAsAttachment(String path, HttpServletResponse response) throws Exception {
+        try (InputStream inputStream = downloadFile(path)) {
+            response.setContentType("application/octet-stream");
+            response.setHeader("Content-Disposition", "attachment; filename=\"" + Paths.get(path).getFileName() + "\"");
+
+            byte[] buffer = new byte[1024];
+            int bytesRead;
+            while ((bytesRead = inputStream.read(buffer)) != -1) {
+                response.getOutputStream().write(buffer, 0, bytesRead);
+            }
+            response.flushBuffer();
+        } catch (ErrorResponseException e) {
+            if (e.errorResponse().code().equals("NoSuchKey")) {
+                throw new ResourceNotFoundException("File not found: " + path);
+            }
+            throw e;
+        }
+    }
+
+
+    private void downloadFolderAsZip(String folderPath, HttpServletResponse response) throws Exception {
+        // Проверяем, что есть файлы в папке
+        Iterable<Result<Item>> results = minioClient.listObjects(
+                ListObjectsArgs.builder()
+                        .bucket(bucketName)
+                        .prefix(folderPath)
+                        .recursive(true)
+                        .build()
+        );
+
+        boolean found = false;
+        List<Item> items = new ArrayList<>();
+
+        for (Result<Item> result : results) {
+            Item item = result.get();
+            if (item.objectName().equals(folderPath)) continue; // пропускаем "пустую папку"
+            found = true;
+            items.add(item);
+        }
+
+        if (!found) {
+            throw new ResourceNotFoundException("Folder not found or empty: " + folderPath);
+        }
+        response.setContentType("application/zip");
+        String zipName = folderPath.endsWith("/") ? folderPath.substring(0, folderPath.length() - 1) : folderPath;
+        response.setHeader("Content-Disposition", "attachment; filename=\"" + Paths.get(zipName).getFileName() + ".zip\"");
+
+        try (ZipOutputStream zos = new ZipOutputStream(response.getOutputStream())) {
+            for (Item item : items) {
+                String objectName = item.objectName();
+                try (InputStream inputStream = minioClient.getObject(
+                        GetObjectArgs.builder()
+                                .bucket(bucketName)
+                                .object(objectName)
+                                .build()
+                )) {
+                    String zipEntryName = objectName.substring(folderPath.length());
+                    zos.putNextEntry(new ZipEntry(zipEntryName));
+
+                    byte[] buffer = new byte[1024];
+                    int bytesRead;
+                    while ((bytesRead = inputStream.read(buffer)) != -1) {
+                        zos.write(buffer, 0, bytesRead);
+                    }
+
+                    zos.closeEntry();
+                }
+            }
+            zos.finish();
+        }
+    }
+
+
+    // This method moves a resource from one path to another in the Minio bucket.
+    @Override
+    public ResourceDto moveResource(String from, String to) {
+        if (from == null || from.isEmpty() || to == null || to.isEmpty()) {
+            throw new IllegalArgumentException("Source and destination paths cannot be null or empty");
+        }
+
+        if (resourceExists(to)) {
+            throw new ResourceAlreadyExistsException("Resource already exists at destination: " + to); // 409
+        }
+
+        boolean isDirectory = from.endsWith("/");
+
+        try {
+            if (isDirectory) {
+                List<String> objects = getObjectsWithPrefix(from);
+                if (objects.isEmpty()) {
+                    throw new ResourceNotFoundException("Directory not found: " + from); // 404
+                }
+
+                for (String object : objects) {
+                    String newPath = to + object.substring(from.length());
+                    try (InputStream in = downloadFile(object)) {
+                        uploadFile(newPath, in, "application/octet-stream");
+                        deleteResource(object);
+                    }
+                }
+                try {
+                    minioClient.removeObject(RemoveObjectArgs.builder()
+                            .bucket(bucketName)
+                            .object(from)
+                            .build());
+                } catch (Exception e) {
+                    throw new RuntimeException("Failed to delete empty directory: " + from, e);
+                }
+
+                // Вернём DTO для папки
+                Path p = Paths.get(to.replaceAll("/$", ""));
+                String name = p.getFileName().toString();
+                String parent = p.getParent() != null ? p.getParent().toString().replace("\\", "/") + "/" : "";
+
+                return new ResourceDto(parent, name, null, "DIRECTORY");
+
+            } else {
+                try (InputStream in = downloadFile(from)) {
+                    uploadFile(to, in, "application/octet-stream");
+                    deleteResource(from);
+
+                    StatObjectResponse stat = minioClient.statObject(
+                            StatObjectArgs.builder()
+                                    .bucket(bucketName)
+                                    .object(to)
+                                    .build()
+                    );
+
+                    Path p = Paths.get(to);
+                    String name = p.getFileName().toString();
+                    String parent = p.getParent() != null ? p.getParent().toString().replace("\\", "/") + "/" : "";
+
+                    return new ResourceDto(parent, name, stat.size(), "FILE");
+                }
+            }
+
+        } catch (ResourceNotFoundException | ResourceAlreadyExistsException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to move resource", e); // 500
+        }
+    }
+
+
+    private boolean resourceExists(String path) {
+        return path.endsWith("/") ? directoryExists(path) : fileExists(path);
+    }
+
+    private boolean fileExists(String path) {
+        try {
+            minioClient.statObject(StatObjectArgs.builder()
+                    .bucket(bucketName)
+                    .object(path)
+                    .build());
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean directoryExists(String path) {
+        try {
+            Iterable<Result<Item>> results = minioClient.listObjects(
+                    ListObjectsArgs.builder()
+                            .bucket(bucketName)
+                            .prefix(path.endsWith("/") ? path : path + "/")
+                            .recursive(false)
+                            .build()
+            );
+            for (Result<Item> result : results) {
+                Item item = result.get();
+                if (item.objectName().startsWith(path.endsWith("/") ? path : path + "/")) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to check directory existence", e);
+        }
+        return false;
+    }
+
+    private List<String> getObjectsWithPrefix(String prefix) {
+        List<String> objectNames = new ArrayList<>();
+        try {
+            Iterable<Result<Item>> results = minioClient.listObjects(
+                    ListObjectsArgs.builder()
+                            .bucket(bucketName)
+                            .prefix(prefix)
+                            .recursive(true)
+                            .build()
+            );
+            for (Result<Item> result : results) {
+                objectNames.add(result.get().objectName());
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to list objects with prefix: " + prefix, e);
+        }
+        return objectNames;
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
     @Override
@@ -91,7 +431,6 @@ public class MinioServiceImpl implements MinioService {
                         .bucket(bucketName)
                         .object(objectName)
                         .stream(file.getInputStream(), file.getSize(), -1)
-                        .contentType(file.getContentType())
                         .build()
         );
     }
@@ -106,16 +445,6 @@ public class MinioServiceImpl implements MinioService {
         );
     }
 
-
-    @Override
-    public void deleteFile(String objectName) throws Exception {
-        minioClient.removeObject(
-                RemoveObjectArgs.builder()
-                        .bucket(bucketName)
-                        .object(objectName)
-                        .build()
-        );
-    }
 
     private void ensureBucketExists() throws Exception {
         boolean found = minioClient.bucketExists(
@@ -132,59 +461,6 @@ public class MinioServiceImpl implements MinioService {
     @Override
     public List<Bucket> listBuckets() throws Exception {
         return minioClient.listBuckets();
-    }
-
-    @Override
-    public void deleteResource(String path) {
-        if (path == null || path.isEmpty()) {
-            throw new IllegalArgumentException("Path cannot be null or empty");
-        }
-
-        try {
-            deleteFile(path);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to delete resource", e);
-        }
-    }
-
-    // This method downloads a resource from the Minio bucket and writes it to the HttpServletResponse.
-    @Override
-    public void downloadResource(String path, HttpServletResponse response) {
-        if (path == null || path.isEmpty()) {
-            throw new IllegalArgumentException("Path cannot be null or empty");
-        }
-
-        try (InputStream inputStream = downloadFile(path)) {
-            response.setContentType("application/octet-stream");
-            response.setHeader("Content-Disposition", "attachment; filename=\"" + Paths.get(path).getFileName() + "\"");
-            byte[] buffer = new byte[1024];
-            int bytesRead;
-            while ((bytesRead = inputStream.read(buffer)) != -1) {
-                response.getOutputStream().write(buffer, 0, bytesRead);
-            }
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to download resource", e);
-        }
-    }
-
-    // This method moves a resource from one path to another in the Minio bucket.
-    @Override
-    public ResourceDto moveResource(String from, String to) {
-        if (from == null || from.isEmpty() || to == null || to.isEmpty()) {
-            throw new IllegalArgumentException("Source and destination paths cannot be null or empty");
-        }
-
-        try (InputStream inputStream = downloadFile(from)) {
-            uploadFile(to, inputStream, "application/octet-stream");
-            deleteResource(from);
-            // Возвращаем новый ResourceDto
-            Path p = Paths.get(to);
-            String name = p.getFileName().toString();
-            String parentPath = p.getParent() != null ? p.getParent().toString().replace("\\", "/") + "/" : "";
-            return new ResourceDto(parentPath, name, 0L, "application/octet-stream", "FILE");
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to move resource", e);
-        }
     }
 
     // This method uploads a file to the Minio bucket using an InputStream.
@@ -248,7 +524,7 @@ public class MinioServiceImpl implements MinioService {
                 String name = p.getFileName().toString();
                 String parentPath = p.getParent() != null ? p.getParent().toString().replace("\\", "/") + "/" : "";
 
-                uploadedResources.add(new ResourceDto(parentPath, name, file.getSize(), file.getContentType(), "FILE"));
+                uploadedResources.add(new ResourceDto(parentPath, name, file.getSize(), "FILE"));
             }
             return uploadedResources;
         } catch (Exception e) {
@@ -279,7 +555,7 @@ public class MinioServiceImpl implements MinioService {
             String name = p.getFileName().toString();
             String parentPath = p.getParent() != null ? p.getParent().toString().replace("\\", "/") + "/" : "";
 
-            return new ResourceDto(parentPath, name, 0L, "application/x-directory", "DIRECTORY");
+            return new ResourceDto(parentPath, name, 0L, "DIRECTORY");
         } catch (Exception e) {
             throw new RuntimeException("Failed to create directory", e);
         }
@@ -291,6 +567,12 @@ public class MinioServiceImpl implements MinioService {
     public List<ResourceDto> listDirectory(String path) {
         if (path == null || path.isEmpty()) {
             throw new IllegalArgumentException("Path cannot be null or empty");
+        }
+
+        // Проверяем, существует ли директория
+        boolean exists = checkDirectoryExists(path); // реализуйте этот метод
+        if (!exists) {
+            throw new ResourceNotFoundException("Directory not found: " + path);
         }
 
         try {
@@ -310,6 +592,37 @@ public class MinioServiceImpl implements MinioService {
         } catch (Exception e) {
             throw new RuntimeException("Failed to list directory", e);
         }
+    }
+
+    private boolean checkDirectoryExists(String path) {
+        try {
+            Iterable<Result<Item>> results = minioClient.listObjects(
+                    ListObjectsArgs.builder()
+                            .bucket(bucketName)
+                            .prefix(path.endsWith("/") ? path : path + "/")
+                            .recursive(false)
+                            .build()
+            );
+            for (Result<Item> result : results) {
+                Item item = result.get();
+                if (item.objectName().startsWith(path.endsWith("/") ? path : path + "/")) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to check directory existence", e);
+        }
+        return false;
+    }
+
+    private long getResourceSize(String path) throws Exception {
+        StatObjectResponse stat = minioClient.statObject(
+                StatObjectArgs.builder()
+                        .bucket(bucketName)
+                        .object(path)
+                        .build()
+        );
+        return stat.size();
     }
 
 }

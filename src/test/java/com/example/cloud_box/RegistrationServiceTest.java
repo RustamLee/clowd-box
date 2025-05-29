@@ -18,6 +18,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers
 public class RegistrationServiceTest {
 
+    @Autowired
+    private AuthService registrationService;
+
+    @Autowired
+    private UserRepository userRepository;
+
     @Container
     private static final MySQLContainer<?> mysqlContainer = new MySQLContainer<>("mysql:8.0.32")
             .withDatabaseName("cloud_box_db")
@@ -30,12 +36,6 @@ public class RegistrationServiceTest {
         registry.add("spring.datasource.username", mysqlContainer::getUsername);
         registry.add("spring.datasource.password", mysqlContainer::getPassword);
     }
-
-    @Autowired
-    private AuthService registrationService;
-
-    @Autowired
-    private UserRepository userRepository;
 
     @Test
     void testUserRegistration() {

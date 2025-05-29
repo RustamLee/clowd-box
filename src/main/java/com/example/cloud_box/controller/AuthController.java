@@ -4,6 +4,11 @@ import com.example.cloud_box.exception.InvalidCredentialsException;
 import com.example.cloud_box.exception.UnauthorizedException;
 import com.example.cloud_box.model.User;
 import com.example.cloud_box.service.AuthService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.http.HttpStatus;
@@ -28,8 +33,15 @@ public class AuthController {
         this.authService = authService;
     }
 
+
+    @Operation(summary = "Register a new user")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "201", description = "User registered successfully",
+                    content = @Content(schema = @Schema(implementation = RegisterResponse.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid input", content = @Content)
+    })
     @PostMapping("/sign-up")
-    public ResponseEntity<?> register(@RequestBody RegisterRequest registerRequest) {
+    public ResponseEntity<RegisterResponse> register(@RequestBody RegisterRequest registerRequest) {
         User user = authService.registerUser(
                 registerRequest.getUsername(),
                 registerRequest.getPassword(),
@@ -42,8 +54,16 @@ public class AuthController {
     }
 
 
+    @Operation(summary = "Login a user")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "User logged in successfully",
+                    content = @Content(schema = @Schema(implementation = LoginResponse.class))),
+            @ApiResponse(responseCode = "401", description = "Invalid credentials", content = @Content)
+    })
     @PostMapping("/sign-in")
-    public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest loginRequest, HttpServletRequest request) {
+    public ResponseEntity<LoginResponse> login(
+            @RequestBody LoginRequest loginRequest,
+            HttpServletRequest request) {
         User user = authService.authenticateUser(loginRequest.getUsername(), loginRequest.getPassword());
 
         if (user == null) {
@@ -60,22 +80,43 @@ public class AuthController {
     }
 
 
+    @Schema(description = "User registration request")
     public static class RegisterRequest {
+        @Schema(description = "Username", example = "john_week")
         private String username;
+        @Schema(description = "Password", example = "myPass123")
         private String password;
+        @Schema(description = "Email address", example = "john@example.com")
         private String email;
 
-        public String getUsername() { return username; }
-        public void setUsername(String username) { this.username = username; }
+        public String getUsername() {
+            return username;
+        }
 
-        public String getPassword() { return password; }
-        public void setPassword(String password) { this.password = password; }
+        public void setUsername(String username) {
+            this.username = username;
+        }
 
-        public String getEmail() { return email; }
-        public void setEmail(String email) { this.email = email; }
+        public String getPassword() {
+            return password;
+        }
+
+        public void setPassword(String password) {
+            this.password = password;
+        }
+
+        public String getEmail() {
+            return email;
+        }
+
+        public void setEmail(String email) {
+            this.email = email;
+        }
     }
 
+    @Schema(description = "User registration response")
     public static class RegisterResponse {
+        @Schema(description = "Registered username", example = "john_week")
         private final String username;
 
         public RegisterResponse(String username) {
@@ -87,8 +128,11 @@ public class AuthController {
         }
     }
 
+    @Schema(description = "User login request")
     public static class LoginRequest {
+        @Schema(description = "Username", example = "john_week")
         private String username;
+        @Schema(description = "Password", example = "myPass123")
         private String password;
 
         public String getUsername() {
@@ -108,7 +152,9 @@ public class AuthController {
         }
     }
 
+    @Schema(description = "User login response")
     public static class LoginResponse {
+        @Schema(description = "Logged in username", example = "john_week")
         private String username;
 
         public LoginResponse(String username) {
@@ -124,6 +170,12 @@ public class AuthController {
         }
     }
 
+    @Operation(summary = "Log out the current user")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "204", description = "Successfully logged out"),
+            @ApiResponse(responseCode = "401", description = "No active session"),
+            @ApiResponse(responseCode = "500", description = "Server error during logout")
+    })
     @PostMapping("/sign-out")
     public ResponseEntity<Void> logout(HttpSession session) {
         try {
