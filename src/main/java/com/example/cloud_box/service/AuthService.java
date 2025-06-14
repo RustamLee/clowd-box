@@ -11,27 +11,31 @@ import org.springframework.stereotype.Service;
 public class AuthService {
     private final UserRepository userRepository;
     private final BCryptPasswordEncoder passwordEncoder;
+    private final MinioService minioService;
 
-    public AuthService(UserRepository userRepository, BCryptPasswordEncoder passwordEncoder) {
+    public AuthService(UserRepository userRepository, BCryptPasswordEncoder passwordEncoder, MinioService minioService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.minioService = minioService;
     }
 
-    public User registerUser(String username, String password, String email) {
+    public User registerUser(String username, String password) {
         if (userRepository.findByUsername(username).isPresent()) {
             throw new UserAlreadyExistsException("Username already taken");
-        }
-
-        if (userRepository.findByEmail(email).isPresent()) {
-            throw new UserAlreadyExistsException("Email already in use");
         }
 
         String encodedPassword = passwordEncoder.encode(password);
         User user = new User();
         user.setUsername(username);
         user.setPassword(encodedPassword);
-        user.setEmail(email);
-        return userRepository.save(user);
+        User savedUser = userRepository.save(user);
+
+        try {
+            minioService.createUserRootFolder(savedUser.getUsername(),savedUser.getId());
+        } catch (Exception e) {
+            System.err.println("Error creating folder in MinIO: " + e.getMessage());
+        }
+        return savedUser;
     }
 
     public User authenticateUser(String username, String password) {
@@ -45,13 +49,7 @@ public class AuthService {
         if (!passwordEncoder.matches(password, user.getPassword())) {
             throw new InvalidCredentialsException("Invalid username or password");
         }
-            return user;
+        return user;
     }
-
-    public void logoutUser(String username) {
-        // Implement logout logic if needed
-        // For example, invalidate the user's session or token
-    }
-
 
 }

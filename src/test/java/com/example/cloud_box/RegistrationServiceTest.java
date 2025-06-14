@@ -43,15 +43,12 @@ public class RegistrationServiceTest {
         User newUser = new User();
         newUser.setUsername("testuser");
         newUser.setPassword("password123");
-        newUser.setEmail("testuser@example.com");
-
         // Act
-        registrationService.registerUser("testuser", "password123", "testuser@example.com");
+        registrationService.registerUser("testuser", "password123");
 
         // Assert
         User savedUser = userRepository.findByUsername("testuser").orElse(null);
         assertThat(savedUser).isNotNull();
         assertThat(savedUser.getUsername()).isEqualTo("testuser");
-        assertThat(savedUser.getEmail()).isEqualTo("testuser@example.com");
     }
 }

@@ -13,6 +13,7 @@ services:
     ports:
       - "3306:3306"
     volumes:
+      - ./my.cnf:/etc/mysql/my.cnf
       - mysql-data:/var/lib/mysql
 
   redis:
@@ -49,20 +50,20 @@ services:
     volumes:
       - minio-data:/data
 
-  cloud-box:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: cloud-box
-    restart: always
-    ports:
-      - "8080:8080"
-    depends_on:
-      - mysql-db
-      - redis
-      - minio
-    environment:
-      SPRING_PROFILES_ACTIVE: default
+#  cloud-box:
+#    build:
+#      context: .
+#      dockerfile: Dockerfile
+#    container_name: cloud-box
+#    restart: always
+#    ports:
+#      - "8080:8080"
+#    depends_on:
+#      - mysql-db
+#      - redis
+#      - minio
+#    environment:
+#      SPRING_PROFILES_ACTIVE: default
 
 volumes:
   mysql-data:

@@ -1,10 +1,8 @@
 package com.example.cloud_box.service.impl;
 
-import com.example.cloud_box.exception.InternalServerException;
-import com.example.cloud_box.exception.InvalidPathException;
 import com.example.cloud_box.exception.ResourceAlreadyExistsException;
 import com.example.cloud_box.exception.ResourceNotFoundException;
-import com.example.cloud_box.model.ResourceDto;
+import com.example.cloud_box.dto.ResourceDTO;
 import com.example.cloud_box.service.MinioService;
 import io.minio.*;
 import io.minio.errors.ErrorResponseException;
@@ -45,7 +43,32 @@ public class MinioServiceImpl implements MinioService {
 
 
     @Override
-    public ResourceDto getResource(String path) throws Exception {
+    public void createUserRootFolder(String username, Long userId) {
+        String bucket = "user-files";
+        String folder = username + "-" + userId + "-files/";
+
+        try {
+            boolean bucketExists = minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucket).build());
+            if (!bucketExists) {
+                minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucket).build());
+            }
+            minioClient.putObject(
+                    PutObjectArgs.builder()
+                            .bucket(bucket)
+                            .object(folder)
+                            .stream(new ByteArrayInputStream(new byte[]{}), 0, -1)
+                            .contentType("application/octet-stream")
+                            .build()
+            );
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create user folder in MinIO", e);
+        }
+    }
+
+
+
+    @Override
+    public ResourceDTO getResource(String path) throws Exception {
         if (path == null || path.isEmpty()) {
             throw new IllegalArgumentException("Path cannot be null or empty");
         }
@@ -66,7 +89,7 @@ public class MinioServiceImpl implements MinioService {
     }
 
 
-    private ResourceDto buildResourceDto(Item item) {
+    private ResourceDTO buildResourceDto(Item item) {
         String objectName = item.objectName();
         Path path = Paths.get(objectName);
         String name = path.getFileName().toString();
@@ -76,7 +99,7 @@ public class MinioServiceImpl implements MinioService {
         String type = objectName.endsWith("/") ? "DIRECTORY" : "FILE";
         Long size = objectName.endsWith("/") ? null : item.size();
 
-        return new ResourceDto(
+        return new ResourceDTO(
                 parentPath,
                 name,
                 size,
@@ -281,7 +304,7 @@ public class MinioServiceImpl implements MinioService {
 
     // This method moves a resource from one path to another in the Minio bucket.
     @Override
-    public ResourceDto moveResource(String from, String to) {
+    public ResourceDTO moveResource(String from, String to) {
         if (from == null || from.isEmpty() || to == null || to.isEmpty()) {
             throw new IllegalArgumentException("Source and destination paths cannot be null or empty");
         }
@@ -320,7 +343,7 @@ public class MinioServiceImpl implements MinioService {
                 String name = p.getFileName().toString();
                 String parent = p.getParent() != null ? p.getParent().toString().replace("\\", "/") + "/" : "";
 
-                return new ResourceDto(parent, name, null, "DIRECTORY");
+                return new ResourceDTO(parent, name, null, "DIRECTORY");
 
             } else {
                 try (InputStream in = downloadFile(from)) {
@@ -338,7 +361,7 @@ public class MinioServiceImpl implements MinioService {
                     String name = p.getFileName().toString();
                     String parent = p.getParent() != null ? p.getParent().toString().replace("\\", "/") + "/" : "";
 
-                    return new ResourceDto(parent, name, stat.size(), "FILE");
+                    return new ResourceDTO(parent, name, stat.size(), "FILE");
                 }
             }
 
@@ -480,7 +503,7 @@ public class MinioServiceImpl implements MinioService {
 
     // this method searches for resources in the Minio bucket based on a query string.
     @Override
-    public List<ResourceDto> searchResources(String query) {
+    public List<ResourceDTO> searchResources(String query) {
         if (query == null || query.isEmpty()) {
             throw new IllegalArgumentException("Query cannot be null or empty");
         }
@@ -493,7 +516,7 @@ public class MinioServiceImpl implements MinioService {
                             .build()
             );
 
-            List<ResourceDto> matches = new ArrayList<>();
+            List<ResourceDTO> matches = new ArrayList<>();
             for (Result<Item> result : results) {
                 Item item = result.get();
                 if (item.objectName().contains(query)) {
@@ -509,13 +532,13 @@ public class MinioServiceImpl implements MinioService {
 
     // This method uploads multiple files to a specified path in the Minio bucket.
     @Override
-    public List<ResourceDto> uploadFiles(String path, List<MultipartFile> files) {
+    public List<ResourceDTO> uploadFiles(String path, List<MultipartFile> files) {
         if (path == null || path.isEmpty()) {
             throw new IllegalArgumentException("Path cannot be null or empty");
         }
 
         try {
-            List<ResourceDto> uploadedResources = new ArrayList<>();
+            List<ResourceDTO> uploadedResources = new ArrayList<>();
             for (MultipartFile file : files) {
                 String objectName = path.endsWith("/") ? path + file.getOriginalFilename() : path + "/" + file.getOriginalFilename();
                 uploadFile(objectName, file);
@@ -524,7 +547,7 @@ public class MinioServiceImpl implements MinioService {
                 String name = p.getFileName().toString();
                 String parentPath = p.getParent() != null ? p.getParent().toString().replace("\\", "/") + "/" : "";
 
-                uploadedResources.add(new ResourceDto(parentPath, name, file.getSize(), "FILE"));
+                uploadedResources.add(new ResourceDTO(parentPath, name, file.getSize(), "FILE"));
             }
             return uploadedResources;
         } catch (Exception e) {
@@ -534,7 +557,7 @@ public class MinioServiceImpl implements MinioService {
 
     // This method creates a directory in the Minio bucket.
     @Override
-    public ResourceDto createDirectory(String path) {
+    public ResourceDTO createDirectory(String path) {
         if (path == null || path.isEmpty()) {
             throw new IllegalArgumentException("Path cannot be null or empty");
         }
@@ -555,7 +578,7 @@ public class MinioServiceImpl implements MinioService {
             String name = p.getFileName().toString();
             String parentPath = p.getParent() != null ? p.getParent().toString().replace("\\", "/") + "/" : "";
 
-            return new ResourceDto(parentPath, name, 0L, "DIRECTORY");
+            return new ResourceDTO(parentPath, name, 0L, "DIRECTORY");
         } catch (Exception e) {
             throw new RuntimeException("Failed to create directory", e);
         }
@@ -564,7 +587,7 @@ public class MinioServiceImpl implements MinioService {
 
     // This method lists the contents of a directory in the Minio bucket.
     @Override
-    public List<ResourceDto> listDirectory(String path) {
+    public List<ResourceDTO> listDirectory(String path) {
         if (path == null || path.isEmpty()) {
             throw new IllegalArgumentException("Path cannot be null or empty");
         }
@@ -584,7 +607,7 @@ public class MinioServiceImpl implements MinioService {
                             .build()
             );
 
-            List<ResourceDto> resources = new ArrayList<>();
+            List<ResourceDTO> resources = new ArrayList<>();
             for (Result<Item> result : results) {
                 resources.add(buildResourceDto(result.get()));
             }

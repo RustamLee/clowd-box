@@ -1,6 +1,6 @@
 package com.example.cloud_box.service;
 
-import com.example.cloud_box.model.ResourceDto;
+import com.example.cloud_box.dto.ResourceDTO;
 import io.minio.messages.Bucket;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.multipart.MultipartFile;
@@ -16,6 +16,8 @@ import java.security.InvalidKeyException;
 
 public interface MinioService {
 
+
+    void createUserRootFolder (String username,Long userId) throws Exception;
 
     void uploadFile(String objectName, MultipartFile file) throws Exception;
 
@@ -33,16 +35,16 @@ public interface MinioService {
 
     void downloadResource(String path, HttpServletResponse response) throws Exception;
 
-    ResourceDto moveResource(String from, String to);
+    ResourceDTO moveResource(String from, String to);
 
     void uploadFile(String objectName, InputStream inputStream, String contentType) throws Exception;
 
-    List<ResourceDto> searchResources(String query);
+    List<ResourceDTO> searchResources(String query);
 
-    List<ResourceDto> uploadFiles(String path, List<MultipartFile> files);
+    List<ResourceDTO> uploadFiles(String path, List<MultipartFile> files);
 
-    List<ResourceDto> listDirectory(String path);
+    List<ResourceDTO> listDirectory(String path);
 
-    ResourceDto createDirectory(String path);
+    ResourceDTO createDirectory(String path);
 
 }
