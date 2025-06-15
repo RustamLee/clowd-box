@@ -45,7 +45,7 @@ public class MinioServiceImpl implements MinioService {
     @Override
     public void createUserRootFolder(String username, Long userId) {
         String bucket = "user-files";
-        String folder = username + "-" + userId + "-files/";
+        String folder = "user" + "-" + userId + "-files/";
 
         try {
             boolean bucketExists = minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucket).build());
@@ -62,6 +62,73 @@ public class MinioServiceImpl implements MinioService {
             );
         } catch (Exception e) {
             throw new RuntimeException("Failed to create user folder in MinIO", e);
+        }
+    }
+
+
+
+    // This method uploads multiple files to a specified path in the Minio bucket.
+    @Override
+    public List<ResourceDTO> uploadFiles(String path, List<MultipartFile> files) {
+        if (path == null || path.isEmpty()) {
+            throw new IllegalArgumentException("Path cannot be null or empty");
+        }
+
+        try {
+            List<ResourceDTO> uploadedResources = new ArrayList<>();
+            for (MultipartFile file : files) {
+                String objectName = path.endsWith("/") ? path + file.getOriginalFilename() : path + "/" + file.getOriginalFilename();
+                uploadFile(objectName, file);
+
+                Path p = Paths.get(objectName);
+                String name = p.getFileName().toString();
+                String parentPath = p.getParent() != null ? p.getParent().toString().replace("\\", "/") + "/" : "";
+
+                uploadedResources.add(new ResourceDTO(parentPath, name, file.getSize(), "FILE"));
+            }
+            return uploadedResources;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to upload files", e);
+        }
+    }
+
+
+    @Override
+    public void uploadFile(String objectName, MultipartFile file) throws Exception {
+        ensureBucketExists();
+
+        minioClient.putObject(
+                PutObjectArgs.builder()
+                        .bucket(bucketName)
+                        .object(objectName)
+                        .stream(file.getInputStream(), file.getSize(), -1)
+                        .build()
+        );
+    }
+
+    // This method uploads a file to the Minio bucket using an InputStream.
+    @Override
+    public void uploadFile(String objectName, InputStream inputStream, String contentType) throws Exception {
+        ensureBucketExists();
+
+        minioClient.putObject(
+                PutObjectArgs.builder()
+                        .bucket(bucketName)
+                        .object(objectName)
+                        .stream(inputStream, -1, 10485760)
+                        .contentType(contentType)
+                        .build()
+        );
+    }
+
+    private void ensureBucketExists() throws Exception {
+        boolean found = minioClient.bucketExists(
+                BucketExistsArgs.builder().bucket(bucketName).build()
+        );
+        if (!found) {
+            minioClient.makeBucket(
+                    MakeBucketArgs.builder().bucket(bucketName).build()
+            );
         }
     }
 
@@ -114,19 +181,41 @@ public class MinioServiceImpl implements MinioService {
         if (path == null || path.trim().isEmpty()) {
             throw new IllegalArgumentException("Path cannot be null or empty");
         }
-        if (path.endsWith("/")) {
-            boolean deleted = deleteFolder(path);
-            if (!deleted) {
-                throw new ResourceNotFoundException("Folder not found: " + path);
-            }
-        } else {
-            boolean deleted = deleteFile(path);
-            if (!deleted) {
-                throw new ResourceNotFoundException("File not found: " + path);
-            }
-        }
 
+        String normalizedPath = path.trim();
+
+        boolean isFolder = isFolderPath(normalizedPath);
+
+        boolean deleted = isFolder ? deleteFolder(ensureSlash(normalizedPath)) : deleteFile(normalizedPath);
+
+        if (!deleted) {
+            throw new ResourceNotFoundException((isFolder ? "Folder" : "File") + " not found: " + path);
+        }
     }
+
+    private boolean isFolderPath(String path) {
+        String folderPath = ensureSlash(path);
+
+        try {
+            Iterable<Result<Item>> results = minioClient.listObjects(
+                    ListObjectsArgs.builder()
+                            .bucket(bucketName)
+                            .prefix(folderPath)
+                            .maxKeys(1)
+                            .recursive(true)
+                            .build()
+            );
+
+            return results.iterator().hasNext();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private String ensureSlash(String path) {
+        return path.endsWith("/") ? path : path + "/";
+    }
+
 
 
     public boolean deleteFile(String path) {
@@ -172,7 +261,6 @@ public class MinioServiceImpl implements MinioService {
                 objectsToDelete.add(new DeleteObject(result.get().objectName()));
             }
 
-            // Проверка на существование объекта-папки (нулевого объекта)
             try {
                 minioClient.statObject(StatObjectArgs.builder()
                         .bucket(bucketName)
@@ -264,7 +352,7 @@ public class MinioServiceImpl implements MinioService {
 
         for (Result<Item> result : results) {
             Item item = result.get();
-            if (item.objectName().equals(folderPath)) continue; // пропускаем "пустую папку"
+            if (item.objectName().equals(folderPath)) continue;
             found = true;
             items.add(item);
         }
@@ -432,32 +520,6 @@ public class MinioServiceImpl implements MinioService {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-    @Override
-    public void uploadFile(String objectName, MultipartFile file) throws Exception {
-        ensureBucketExists();
-
-        minioClient.putObject(
-                PutObjectArgs.builder()
-                        .bucket(bucketName)
-                        .object(objectName)
-                        .stream(file.getInputStream(), file.getSize(), -1)
-                        .build()
-        );
-    }
-
     @Override
     public InputStream downloadFile(String objectName) throws Exception {
         return minioClient.getObject(
@@ -469,36 +531,9 @@ public class MinioServiceImpl implements MinioService {
     }
 
 
-    private void ensureBucketExists() throws Exception {
-        boolean found = minioClient.bucketExists(
-                BucketExistsArgs.builder().bucket(bucketName).build()
-        );
-        if (!found) {
-            minioClient.makeBucket(
-                    MakeBucketArgs.builder().bucket(bucketName).build()
-            );
-        }
-    }
-
-
     @Override
     public List<Bucket> listBuckets() throws Exception {
         return minioClient.listBuckets();
-    }
-
-    // This method uploads a file to the Minio bucket using an InputStream.
-    @Override
-    public void uploadFile(String objectName, InputStream inputStream, String contentType) throws Exception {
-        ensureBucketExists();
-
-        minioClient.putObject(
-                PutObjectArgs.builder()
-                        .bucket(bucketName)
-                        .object(objectName)
-                        .stream(inputStream, -1, 10485760)
-                        .contentType(contentType)
-                        .build()
-        );
     }
 
     // this method searches for resources in the Minio bucket based on a query string.
@@ -526,32 +561,6 @@ public class MinioServiceImpl implements MinioService {
             return matches;
         } catch (Exception e) {
             throw new RuntimeException("Failed to search resources", e);
-        }
-    }
-
-
-    // This method uploads multiple files to a specified path in the Minio bucket.
-    @Override
-    public List<ResourceDTO> uploadFiles(String path, List<MultipartFile> files) {
-        if (path == null || path.isEmpty()) {
-            throw new IllegalArgumentException("Path cannot be null or empty");
-        }
-
-        try {
-            List<ResourceDTO> uploadedResources = new ArrayList<>();
-            for (MultipartFile file : files) {
-                String objectName = path.endsWith("/") ? path + file.getOriginalFilename() : path + "/" + file.getOriginalFilename();
-                uploadFile(objectName, file);
-
-                Path p = Paths.get(objectName);
-                String name = p.getFileName().toString();
-                String parentPath = p.getParent() != null ? p.getParent().toString().replace("\\", "/") + "/" : "";
-
-                uploadedResources.add(new ResourceDTO(parentPath, name, file.getSize(), "FILE"));
-            }
-            return uploadedResources;
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to upload files", e);
         }
     }
 
@@ -591,9 +600,7 @@ public class MinioServiceImpl implements MinioService {
         if (path == null || path.isEmpty()) {
             throw new IllegalArgumentException("Path cannot be null or empty");
         }
-
-        // Проверяем, существует ли директория
-        boolean exists = checkDirectoryExists(path); // реализуйте этот метод
+        boolean exists = checkDirectoryExists(path);
         if (!exists) {
             throw new ResourceNotFoundException("Directory not found: " + path);
         }
@@ -609,7 +616,11 @@ public class MinioServiceImpl implements MinioService {
 
             List<ResourceDTO> resources = new ArrayList<>();
             for (Result<Item> result : results) {
-                resources.add(buildResourceDto(result.get()));
+                Item item = result.get();
+                if (item.objectName().equals(path)) {
+                    continue;
+                }
+                resources.add(buildResourceDto(item));
             }
             return resources;
         } catch (Exception e) {
