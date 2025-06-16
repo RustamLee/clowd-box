@@ -1,5 +1,6 @@
 package com.example.cloud_box.dto;
 
+import com.example.cloud_box.model.ResourceType;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
@@ -23,9 +24,9 @@ public class ResourceDTO {
     private Long size;
 
     @Schema(description = "Type of resource: FILE or DIRECTORY", example = "FILE")
-    private String type;
+    private ResourceType type;
 
     public Long getSize() {
-        return "DIRECTORY".equalsIgnoreCase(type) ? null : size;
+        return type == ResourceType.DIRECTORY ? null : size;
     }
 }

@@ -4,6 +4,8 @@ import com.example.cloud_box.dto.ResourceDTO;
 import com.example.cloud_box.model.User;
 import com.example.cloud_box.repository.UserRepository;
 import com.example.cloud_box.service.MinioService;
+import com.example.cloud_box.util.ResourcePathUtils;
+import com.example.cloud_box.util.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
@@ -29,10 +31,9 @@ import java.util.stream.Collectors;
 public class MinioController {
 
     private final MinioService minioService;
-    private final UserRepository userRepository;
+    private final SecurityUtils securityUtils;
 
     // get content of file
-    @GetMapping("/directory")
     @Operation(summary = "Get contents of a directory",
             description = "Returns the list of files and folders inside the specified directory path.")
     @ApiResponses(value = {
@@ -43,33 +44,20 @@ public class MinioController {
             @ApiResponse(responseCode = "500", description = "Internal server error",
                     content = @Content(schema = @Schema(type = "string")))
     })
-    public ResponseEntity<?> listDirectory(@RequestParam(required = false) String path, Authentication authentication) {
+    @GetMapping("/directory")
+    public ResponseEntity<?> listDirectory(@RequestParam(required = false) String path) {
         try {
-            if (authentication == null || !authentication.isAuthenticated()) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Not authenticated");
-            }
-
-            User user = userRepository.findByUsername(authentication.getName())
-                    .orElseThrow(() -> new RuntimeException("User not found"));
-
-            if (path == null || path.isBlank()) {
-                path = "user" + "-" + user.getId() + "-files/";
-            }
-
             List<ResourceDTO> contents = minioService.listDirectory(path);
             return ResponseEntity.ok(contents);
-
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         } catch (Exception e) {
             e.printStackTrace();
-
             return ResponseEntity.status(500).body("Internal server error");
         }
-
     }
 
-    // upload file
+    // upload file or folder
     @PostMapping("/resource")
     @Operation(summary = "Upload files to MinIO",
             description = "Uploads one or more files to the user's root folder in MinIO. Optionally accepts a subpath.")
@@ -85,8 +73,7 @@ public class MinioController {
     })
     public ResponseEntity<?> upload(
             @RequestParam(value = "path", required = false) String path,
-            @RequestParam MultiValueMap<String, MultipartFile> fileMap,
-            Authentication authentication) {
+            @RequestParam MultiValueMap<String, MultipartFile> fileMap) {
 
         try {
             List<MultipartFile> files = fileMap.values().stream()
@@ -97,15 +84,40 @@ public class MinioController {
                 return ResponseEntity.badRequest().body("No files provided");
             }
 
-            User user = userRepository.findByUsername(authentication.getName())
-                    .orElseThrow(() -> new RuntimeException("User not found"));
+            Long userId = securityUtils.getCurrentUserId(); // теперь без параметров
+            String normalizedPath = ResourcePathUtils.normalizePath(path, userId);
 
-            if (path == null || path.isBlank()) {
-                path = "user" + "-" + user.getId() + "-files/";
-            }
-
-            List<ResourceDTO> uploaded = minioService.uploadFiles(path, files);
+            List<ResourceDTO> uploaded = minioService.uploadFiles(normalizedPath, files);
             return ResponseEntity.status(HttpStatus.CREATED).body(uploaded);
+
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body("Internal server error");
+        }
+    }
+
+    // creata an empty folder
+    @Operation(summary = "Create a new directory",
+            description = "Creates a new directory at the specified path in the storage.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "201", description = "Directory created successfully",
+                    content = @Content(schema = @Schema(implementation = ResourceDTO.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid path parameter",
+                    content = @Content(schema = @Schema(type = "string"))),
+            @ApiResponse(responseCode = "409", description = "Directory already exists or conflict",
+                    content = @Content(schema = @Schema(type = "string"))),
+            @ApiResponse(responseCode = "500", description = "Internal server error",
+                    content = @Content(schema = @Schema(type = "string")))
+    })
+    @PostMapping("/directory")
+    public ResponseEntity<?> createDirectory(
+            @RequestParam String path) {
+        System.out.println("Create directory controller called with path: " + path);
+        try {
+            ResourceDTO folder = minioService.createDirectory(path);
+            return ResponseEntity.status(HttpStatus.CREATED).body(folder);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         } catch (IllegalStateException e) {
@@ -115,7 +127,32 @@ public class MinioController {
         }
     }
 
-    // delete resource
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    // delete resource (folder or file)
     @DeleteMapping("/resource")
     @Operation(summary = "Delete a resource from MinIO",
             description = "Deletes the resource located at the specified path.")
@@ -131,7 +168,6 @@ public class MinioController {
         minioService.deleteResource(path);
         return ResponseEntity.noContent().build();
     }
-
 
 
     // get info about all resources
@@ -208,36 +244,6 @@ public class MinioController {
             return ResponseEntity.ok(results);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body("Internal server error");
-        }
-    }
-
-    // create directory
-    @PostMapping("/directory")
-    @Operation(summary = "Create a new directory",
-            description = "Creates a new directory at the specified path in the storage.")
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "201", description = "Directory created successfully",
-                    content = @Content(schema = @Schema(implementation = ResourceDTO.class))),
-            @ApiResponse(responseCode = "400", description = "Invalid path parameter",
-                    content = @Content(schema = @Schema(type = "string"))),
-            @ApiResponse(responseCode = "409", description = "Directory already exists or conflict",
-                    content = @Content(schema = @Schema(type = "string"))),
-            @ApiResponse(responseCode = "500", description = "Internal server error",
-                    content = @Content(schema = @Schema(type = "string")))
-    })
-
-    public ResponseEntity<?> createDirectory(
-            @Parameter(description = "Path where the new directory will be created", required = true, example = "folder/newDir")
-            @RequestParam String path) {
-        try {
-            ResourceDTO folder = minioService.createDirectory(path);
-            return ResponseEntity.status(HttpStatus.CREATED).body(folder);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getMessage());
         } catch (Exception e) {
             return ResponseEntity.status(500).body("Internal server error");
         }
