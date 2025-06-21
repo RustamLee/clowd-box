@@ -11,12 +11,12 @@ import org.springframework.stereotype.Service;
 public class AuthService {
     private final UserRepository userRepository;
     private final BCryptPasswordEncoder passwordEncoder;
-    private final MinioService minioService;
+    private final UserFolderService userFolderService;
 
-    public AuthService(UserRepository userRepository, BCryptPasswordEncoder passwordEncoder, MinioService minioService) {
+    public AuthService(UserRepository userRepository, BCryptPasswordEncoder passwordEncoder, UserFolderService userFolderService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
-        this.minioService = minioService;
+        this.userFolderService = userFolderService;
     }
 
     public User registerUser(String username, String password) {
@@ -31,7 +31,7 @@ public class AuthService {
         User savedUser = userRepository.save(user);
 
         try {
-            minioService.createUserRootFolder(savedUser.getUsername(),savedUser.getId());
+            userFolderService.createUserRootFolder(savedUser.getId());
         } catch (Exception e) {
             System.err.println("Error creating folder in MinIO: " + e.getMessage());
         }

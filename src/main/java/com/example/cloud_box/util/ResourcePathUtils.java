@@ -1,15 +1,29 @@
 package com.example.cloud_box.util;
 
+import com.example.cloud_box.model.ResourceType;
+
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
 public class ResourcePathUtils {
 
-    private ResourcePathUtils() {}
+    private ResourcePathUtils() {
+    }
 
     public static String getUserRootPath(Long userId) {
         return "user-" + userId + "-files/";
     }
+
+
+    // Метод для минимальной нормализации пути, заменяет обратные слэши на прямые.
+    // Используем в методе move в сервисе ResourceService
+    public static String minimalNormalize(String path) {
+        if (path == null || path.isBlank()) {
+            return path;
+        }
+        return path.replace("\\", "/");
+    }
+
 
     public static String normalizePath(String path, Long userId) {
         if (path == null || path.isBlank()) {
@@ -34,7 +48,6 @@ public class ResourcePathUtils {
     }
 
 
-
     public static String extractName(String objectName) {
         Path path = Paths.get(objectName).normalize();
         String name = path.getFileName().toString();
@@ -51,9 +64,6 @@ public class ResourcePathUtils {
         return (parent != null ? parent.toString().replace("\\", "/") + "/" : "");
     }
 
-    /**
-     * Базовая нормализация без userId, но с флагом — это директория или файл.
-     */
     public static String normalizePath(String path, boolean isDirectory) {
         if (path == null || path.isBlank()) {
             throw new IllegalArgumentException("Path cannot be null or blank");
@@ -71,6 +81,9 @@ public class ResourcePathUtils {
         return normalized;
     }
 
-
+    public static String normalizePath(String path, Long userId, boolean isDirectory) {
+        String base = normalizePath(path, userId);
+        return isDirectory && !base.endsWith("/") ? base + "/" : base;
+    }
 
 }
