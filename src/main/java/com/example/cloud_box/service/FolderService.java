@@ -1,19 +1,14 @@
 package com.example.cloud_box.service;
 
 import com.example.cloud_box.dto.ResourceDTO;
-import com.example.cloud_box.exception.ResourceAlreadyExistsException;
-import com.example.cloud_box.exception.ResourceNotFoundException;
+import com.example.cloud_box.exception.*;
 import com.example.cloud_box.model.ResourceType;
 import com.example.cloud_box.util.ResourcePathUtils;
-import io.minio.GetObjectArgs;
-import io.minio.ListObjectsArgs;
-import io.minio.PutObjectArgs;
 import io.minio.Result;
 import io.minio.messages.Item;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.stereotype.Service;
 
-import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -33,14 +28,12 @@ public class FolderService {
 
     // метод для перемещения папки, работает с нормализованными путями
     public ResourceDTO moveFolder(String from, String to) {
-        System.out.println("[FolderService.moveFolder] Moving folder from: " + from + " to: " + to);
-
         if (!from.endsWith("/") || !to.endsWith("/")) {
-            throw new IllegalArgumentException("Both source and destination paths must end with '/'");
+            throw new InvalidPathException("Both source and destination paths must end with '/'");
         }
 
         if (minioService.resourceExists(to)) {
-            throw new ResourceAlreadyExistsException("Resource already exists at destination: " + to);
+            throw new ResourceAlreadyExistsException("Resource already exists at destination");
         }
 
         boolean placeholderExists = minioService.fileExists(from);
@@ -51,7 +44,6 @@ public class FolderService {
         }
 
         try {
-            // Перемещаем все вложенные объекты
             for (String object : objects) {
                 String suffix = object.substring(from.length());
                 String newPath = to + suffix;
@@ -64,21 +56,16 @@ public class FolderService {
                 }
             }
 
-            // Перемещаем плейсхолдер, если он существует
             if (placeholderExists) {
                 try (InputStream in = minioService.downloadFile(from)) {
                     minioService.uploadFile(to, in, "application/x-directory");
-                    // Удаляем плейсхолдер только если он существует (проверяем)
                     if (minioService.fileExists(from)) {
                         minioService.deleteResource(from);
                     }
                 } catch (Exception e) {
-                    // Логируем предупреждение, но не прерываем операцию
                     System.out.println("[FolderService.moveFolder] Warning: failed to move folder placeholder: " + from + ", " + e.getMessage());
                 }
             }
-
-            // Формируем DTO
             Path p = Paths.get(to.replaceAll("/$", ""));
             String name = p.getFileName().toString();
             String parent = p.getParent() != null ? p.getParent().toString().replace("\\", "/") + "/" : "";
@@ -87,22 +74,26 @@ public class FolderService {
         } catch (ResourceNotFoundException | ResourceAlreadyExistsException e) {
             throw e;
         } catch (Exception e) {
-            e.printStackTrace();
-            throw new RuntimeException("Failed to move folder", e);
+            throw new InternalServerException("Failed to move folder", e);
         }
     }
 
     // метод для создания пустой папки, также работает с нормализованными путями
 
-    public ResourceDTO createEmptyFolder(String normalizedPath) throws Exception {
+    public ResourceDTO createEmptyFolder(String normalizedPath) {
         System.out.println("[FolderService.createEmptyFolder] Creating empty directory at path: " + normalizedPath);
 
         if (minioService.resourceExists(normalizedPath)) {
-            throw new IllegalStateException("Folder already exists: " + normalizedPath);
+            throw new ResourceAlreadyExistsException("Folder already exists: " + normalizedPath);
         }
 
-        minioService.ensureBucketExists();
-        minioService.createDirectoryPlaceholder(normalizedPath);
+        try {
+            minioService.ensureBucketExists();
+            minioService.createDirectoryPlaceholder(normalizedPath);
+        } catch (MinioOperationException e) {
+            throw new InternalServerException("Failed to create folder in MinIO", e);
+        }
+
 
         Path p = Paths.get(normalizedPath.replaceAll("/$", ""));
         String name = p.getFileName().toString();
@@ -121,22 +112,26 @@ public class FolderService {
     }
 
     // метод для скачивания папки как zip-архива
-    public void downloadFolderAsZip(String folderPath, HttpServletResponse response) throws Exception {
-        // Получаем список объектов через MinioService
+    public void downloadFolderAsZip(String folderPath, HttpServletResponse response) {
+        System.out.println("[FolderService.downloadFolderAsZip] Downloading folder as zip: " + folderPath);
         Iterable<Result<Item>> results = minioService.listObjects(folderPath, true);
 
         boolean found = false;
         List<Item> items = new ArrayList<>();
 
         for (Result<Item> result : results) {
-            Item item = result.get();
-            if (item.objectName().equals(folderPath)) continue;
-            found = true;
-            items.add(item);
+            try {
+                Item item = result.get();
+                if (item.objectName().equals(folderPath)) continue;
+                found = true;
+                items.add(item);
+            } catch (Exception e) {
+                throw new InternalServerException("Failed to list objects in folder: ", e);
+            }
         }
 
         if (!found) {
-            throw new ResourceNotFoundException("Folder not found or empty: " + folderPath);
+            throw new ResourceNotFoundException("Folder not found or empty");
         }
         response.setContentType("application/zip");
         String zipName = folderPath.endsWith("/") ? folderPath.substring(0, folderPath.length() - 1) : folderPath;
@@ -159,6 +154,8 @@ public class FolderService {
                 }
             }
             zos.finish();
+        } catch (Exception e) {
+            throw new InternalServerException("Failed to download folder as zip", e);
         }
     }
 

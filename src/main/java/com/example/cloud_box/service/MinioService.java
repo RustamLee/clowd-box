@@ -1,6 +1,7 @@
 package com.example.cloud_box.service;
 
 
+import com.example.cloud_box.exception.MinioOperationException;
 import io.minio.*;
 import io.minio.errors.ErrorResponseException;
 import io.minio.messages.Item;
@@ -14,7 +15,7 @@ import java.util.List;
 
 
 // сервис отвечает за низкоуровневые операции с Minio, такие как загрузка, скачивание, удаление файлов и управление ресурсами.
-// пути должны быть нормализованы и проверены на существование перед выполнением операций.
+// все пути сюда попадают нормализованными
 @Service
 public class MinioService {
 
@@ -29,16 +30,19 @@ public class MinioService {
     }
 
 
-    public void uploadFile(String objectName, InputStream inputStream, String contentType) throws Exception {
-        System.out.println("[MinioService.uploadFile] Uploading file: " + objectName);
-        minioClient.putObject(
-                PutObjectArgs.builder()
-                        .bucket(bucketName)
-                        .object(objectName)
-                        .stream(inputStream, -1, 10485760)
-                        .contentType(contentType)
-                        .build()
-        );
+    public void uploadFile(String objectName, InputStream inputStream, String contentType) {
+        try {
+            minioClient.putObject(
+                    PutObjectArgs.builder()
+                            .bucket(bucketName)
+                            .object(objectName)
+                            .stream(inputStream, -1, 10485760)
+                            .contentType(contentType)
+                            .build()
+            );
+        } catch (Exception e) {
+            throw new MinioOperationException("Failed to upload file to Minio", e);
+        }
     }
 
 
@@ -52,7 +56,23 @@ public class MinioService {
                             .build()
             );
         } catch (Exception e) {
-            throw new RuntimeException("Failed to list objects in Minio", e);
+            throw new MinioOperationException("Failed to list objects in Minio", e);
+        }
+    }
+
+
+    public void ensureBucketExists() {
+        try {
+            boolean found = minioClient.bucketExists(
+                    BucketExistsArgs.builder().bucket(bucketName).build()
+            );
+            if (!found) {
+                minioClient.makeBucket(
+                        MakeBucketArgs.builder().bucket(bucketName).build()
+                );
+            }
+        } catch (Exception e) {
+            throw new MinioOperationException("Error checking or creating bucket in Minio", e);
         }
     }
 
@@ -64,10 +84,8 @@ public class MinioService {
         if (directoryExists(path)) {
             return true;
         }
-        // Проверка на наличие "плейсхолдера" — объекта с именем как папка (path/)
         return fileExists(path);
     }
-
 
     // метод для проверки существования ФАЙЛА
     public boolean fileExists(String path) {
@@ -141,28 +159,43 @@ public class MinioService {
             if ("NoSuchKey".equals(e.errorResponse().code())) {
                 return false;
             }
-            throw new RuntimeException("MinIO error during removeObject", e);
+            throw new MinioOperationException("MinIO error during removeObject", e);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to delete file: " + path, e);
+            throw new MinioOperationException("Failed to delete file: " + path, e);
         }
     }
 
     public boolean deleteResource(String path) {
+        boolean resourceDeleted = false;
+
         if (directoryExists(path)) {
             List<String> objects = getObjectsWithPrefix(path);
             for (String obj : objects) {
-                deleteFile(obj);
+                try {
+                    deleteFile(obj);
+                    resourceDeleted = true;
+                } catch (MinioOperationException e) {
+                    System.err.println("Failed to delete object: " + obj + ", error: " + e.getMessage());
+                }
             }
-            if (fileExists(path)) {
-                deleteFile(path);
+            try {
+                if (fileExists(path)) {
+                    deleteFile(path);
+                    resourceDeleted = true;
+                }
+            } catch (MinioOperationException e) {
+                System.err.println("Failed to delete directory placeholder: " + path + ", error: " + e.getMessage());
             }
-            return true;
         } else if (fileExists(path)) {
-            deleteFile(path);
-            return true;
-        } else {
-            return false; // ресурс не найден, не кидаем исключение
+            try {
+                deleteFile(path);
+                resourceDeleted = true;
+            } catch (MinioOperationException e) {
+                System.err.println("Failed to delete file: " + path + ", error: " + e.getMessage());
+            }
         }
+
+        return resourceDeleted;
     }
 
 
@@ -183,7 +216,7 @@ public class MinioService {
                 objects.add(item.objectName());
             }
         } catch (Exception e) {
-            throw new RuntimeException("Failed to list objects with prefix: " + path, e);
+            throw new MinioOperationException("Failed to list objects with prefix: " + path, e);
         }
         return objects;
     }
@@ -193,17 +226,6 @@ public class MinioService {
             uploadFile(path, new ByteArrayInputStream(new byte[0]), "application/x-directory");
         } catch (Exception e) {
             throw new RuntimeException("Failed to create directory placeholder: " + path, e);
-        }
-    }
-
-    public void ensureBucketExists() throws Exception {
-        boolean found = minioClient.bucketExists(
-                BucketExistsArgs.builder().bucket(bucketName).build()
-        );
-        if (!found) {
-            minioClient.makeBucket(
-                    MakeBucketArgs.builder().bucket(bucketName).build()
-            );
         }
     }
 }

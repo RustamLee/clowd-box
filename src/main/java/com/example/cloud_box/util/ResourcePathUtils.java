@@ -15,16 +15,6 @@ public class ResourcePathUtils {
     }
 
 
-    // Метод для минимальной нормализации пути, заменяет обратные слэши на прямые.
-    // Используем в методе move в сервисе ResourceService
-    public static String minimalNormalize(String path) {
-        if (path == null || path.isBlank()) {
-            return path;
-        }
-        return path.replace("\\", "/");
-    }
-
-
     public static String normalizePath(String path, Long userId) {
         if (path == null || path.isBlank()) {
             return getUserRootPath(userId);

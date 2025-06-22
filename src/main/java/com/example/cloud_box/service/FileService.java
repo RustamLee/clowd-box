@@ -1,6 +1,7 @@
 package com.example.cloud_box.service;
 
 import com.example.cloud_box.dto.ResourceDTO;
+import com.example.cloud_box.exception.InternalServerException;
 import com.example.cloud_box.exception.ResourceAlreadyExistsException;
 import com.example.cloud_box.exception.ResourceNotFoundException;
 import com.example.cloud_box.model.ResourceType;
@@ -9,6 +10,7 @@ import io.minio.*;
 import io.minio.errors.ErrorResponseException;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.stereotype.Service;
+
 import java.io.InputStream;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -24,17 +26,16 @@ public class FileService {
     }
 
     // метод для перемещения файла, работает с нормализованными путями
-    public ResourceDTO moveFile(String from, String to) throws Exception {
+    public ResourceDTO moveFile(String from, String to) {
         System.out.println("[FileService.moveFile] Moving file from: " + from + " to: " + to);
         if (minioService.resourceExists(to)) {
-            throw new ResourceAlreadyExistsException("Resource already exists at destination: " + to);
+            throw new ResourceAlreadyExistsException("Resource already exists at destination");
         }
         if (!minioService.fileExists(from)) {
             throw new ResourceNotFoundException("File not found: " + from);
         }
         try (InputStream in = minioService.downloadFile(from)) {
             minioService.uploadFile(to, in, "application/octet-stream");
-            // Удаляем исходный файл после успешной загрузки
             minioService.deleteFile(from);
             StatObjectResponse stat = minioService.getFileStat(to);
 
@@ -43,9 +44,11 @@ public class FileService {
             String parent = p.getParent() != null ? p.getParent().toString().replace("\\", "/") + "/" : "";
 
             return new ResourceDTO(parent, name, stat.size(), ResourceType.FILE);
+        } catch (
+                Exception e) {
+            throw new InternalServerException("Failed to move file", e);
         }
     }
-
 
     // метод удлаления файла
     public boolean deleteFile(String path) {
@@ -54,7 +57,8 @@ public class FileService {
     }
 
     // метод для скачивания файла
-    public void downloadFileAsAttachment(String path, HttpServletResponse response) throws Exception {
+    public void downloadFileAsAttachment(String path, HttpServletResponse response) {
+        System.out.println("[FileService.downloadFileAsAttachment] Downloading file: " + path);
         try (InputStream inputStream = minioService.downloadFile(path)) {
             response.setContentType("application/octet-stream");
             response.setHeader("Content-Disposition", "attachment; filename=\"" + Paths.get(path).getFileName() + "\"");
@@ -69,11 +73,13 @@ public class FileService {
             if (e.errorResponse().code().equals("NoSuchKey")) {
                 throw new ResourceNotFoundException("File not found: " + path);
             }
-            throw e;
+            throw new InternalServerException("Minio error during file download", e);
+        } catch (java.io.IOException e) {
+            throw new InternalServerException("I/O error during file download", e);
+        } catch (Exception e) {
+            throw new InternalServerException("Unexpected error during file download", e);
         }
     }
-
-
 
 
 }

@@ -23,35 +23,9 @@ import java.util.stream.Collectors;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api")
-public class MinioController {
+public class ResourceController {
 
     private final ResourceService resourceService;
-
-
-    // метод для перемещения ресурса (файла или папки) из одного места в другое а также для переименования
-    @GetMapping("/resource/move")
-    @Operation(
-            summary = "Move or rename a resource",
-            description = "Moves a file or folder from one path to another, or renames it if only the name changes."
-    )
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Resource successfully moved or renamed"),
-            @ApiResponse(responseCode = "400", description = "Invalid input: source and destination paths are required"),
-            @ApiResponse(responseCode = "500", description = "Internal server error")
-    })
-    public ResponseEntity<?> move(
-            @Parameter(description = "Source path of the resource (file or folder)", required = true)
-            @RequestParam String from,
-            @Parameter(description = "Target path for the resource or new name", required = true)
-            @RequestParam String to) throws Exception {
-        System.out.println("[MiniController.MOVE] method called with FROM & TO: " + from + ", to: " + to);
-        if (from == null || from.isBlank() || to == null || to.isBlank()) {
-            return ResponseEntity.badRequest().body("Source and destination paths cannot be null or blank");
-        }
-        ResourceDTO result = resourceService.moveResource(from, to);
-        return ResponseEntity.ok(result);
-    }
-
 
     // метод для создания пустой папки в корневой директории пользователя
     @PostMapping("/directory")
@@ -67,44 +41,9 @@ public class MinioController {
             @ApiResponse(responseCode = "500", description = "Internal server error",
                     content = @Content(schema = @Schema(type = "string")))
     })
-    public ResponseEntity<?> createDirectory(
-            @RequestParam String path) {
-        System.out.println("[MiniController.createDirectory] Called with path: " + path);
-        try {
-            ResourceDTO folder = resourceService.createDirectory(path);
-            return ResponseEntity.status(HttpStatus.CREATED).body(folder);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getMessage());
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body("Internal server error");
-        }
-    }
-
-    // Метод для получения списка содержимого директории для конкретного пользователя
-    @Operation(summary = "Get contents of a directory",
-            description = "Returns the list of files and folders inside the specified directory path.")
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Directory contents returned successfully",
-                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = ResourceDTO.class)))),
-            @ApiResponse(responseCode = "400", description = "Invalid path parameter",
-                    content = @Content(schema = @Schema(type = "string"))),
-            @ApiResponse(responseCode = "500", description = "Internal server error",
-                    content = @Content(schema = @Schema(type = "string")))
-    })
-    @GetMapping("/directory")
-    public ResponseEntity<?> listDirectory(@RequestParam(required = false) String path) {
-        System.out.println("[MiniController.listDirectory] Called with path: " + path);
-        try {
-            List<ResourceDTO> contents = resourceService.listDirectory(path);
-            return ResponseEntity.ok(contents);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.status(500).body("Internal server error");
-        }
+    public ResponseEntity<?> createDirectory(@RequestParam String path) {
+        ResourceDTO folder = resourceService.createDirectory(path);
+        return ResponseEntity.status(HttpStatus.CREATED).body(folder);
     }
 
     // метод для загрузки ресурса (файл или папка)  в MinIO
@@ -124,26 +63,51 @@ public class MinioController {
     public ResponseEntity<?> upload(
             @RequestParam(value = "path", required = false) String path,
             @RequestParam MultiValueMap<String, MultipartFile> fileMap) {
-        System.out.println("[MinioController.upload] Called with path: " + path);
 
-        try {
-            List<MultipartFile> files = fileMap.values().stream()
-                    .flatMap(List::stream)
-                    .collect(Collectors.toList());
+        List<MultipartFile> files = fileMap.values().stream()
+                .flatMap(List::stream)
+                .collect(Collectors.toList());
 
-            if (files.isEmpty()) {
-                return ResponseEntity.badRequest().body("No files provided");
-            }
+        List<ResourceDTO> uploaded = resourceService.uploadResource(path, files);
 
-            List<ResourceDTO> uploaded = resourceService.uploadResource(path, files);
-            return ResponseEntity.status(HttpStatus.CREATED).body(uploaded);
+        return ResponseEntity.status(HttpStatus.CREATED).body(uploaded);
+    }
 
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.status(500).body("Internal server error");
-        }
+    // метод для перемещения ресурса (файла или папки) из одного места в другое а также для переименования
+    @GetMapping("/resource/move")
+    @Operation(
+            summary = "Move or rename a resource",
+            description = "Moves a file or folder from one path to another, or renames it if only the name changes."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Resource successfully moved or renamed"),
+            @ApiResponse(responseCode = "400", description = "Invalid input: source and destination paths are required"),
+            @ApiResponse(responseCode = "500", description = "Internal server error")
+    })
+    public ResponseEntity<ResourceDTO> move(
+            @RequestParam String from,
+            @RequestParam String to
+    ) {
+        ResourceDTO result = resourceService.moveResource(from, to);
+        return ResponseEntity.ok(result);
+    }
+
+    // Метод для получения списка содержимого директории для конкретного пользователя
+    @Operation(summary = "Get contents of a directory",
+            description = "Returns the list of files and folders inside the specified directory path.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Directory contents returned successfully",
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = ResourceDTO.class)))),
+            @ApiResponse(responseCode = "400", description = "Invalid path parameter",
+                    content = @Content(schema = @Schema(type = "string"))),
+            @ApiResponse(responseCode = "500", description = "Internal server error",
+                    content = @Content(schema = @Schema(type = "string")))
+    })
+    @GetMapping("/directory")
+    public ResponseEntity<List<ResourceDTO>> listDirectory(@RequestParam(required = false) String path) {
+        System.out.println("[MiniController.listDirectory] Called with path: " + path);
+        List<ResourceDTO> contents = resourceService.listDirectory(path);
+        return ResponseEntity.ok(contents);
     }
 
     // метод для удаления ресурса (файла или папки) из MinIO
@@ -158,7 +122,7 @@ public class MinioController {
     @DeleteMapping("/resource")
     public ResponseEntity<Void> deleteResource(
             @Parameter(description = "Path to the resource in MinIO", required = true, example = "folder/file.txt")
-            @RequestParam String path) throws Exception {
+            @RequestParam String path) {
         System.out.println("Delete resource controller called with path: " + path);
         resourceService.deleteResource(path);
         return ResponseEntity.noContent().build();
@@ -176,9 +140,11 @@ public class MinioController {
     })
     public void download(
             @Parameter(description = "Path to the resource in MinIO", required = true, example = "folder/file.txt")
-            @RequestParam String path, HttpServletResponse response) throws Exception {
+            @RequestParam String path, HttpServletResponse response) {
+        System.out.println("[MinioController.download] Downloading resource at path: " + path);
         resourceService.downloadResource(path, response);
     }
+
 
     // метод для поиска ресурса (файла или папки) в MinIO
     // find by name
@@ -193,17 +159,9 @@ public class MinioController {
                     content = @Content(schema = @Schema(type = "string")))
     })
     @GetMapping("/resource/search")
-    public ResponseEntity<?> search(
-            @Parameter(description = "Search query string", required = true, example = "myfile")
-            @RequestParam String query) {
-        try {
-            List<ResourceDTO> results = resourceService.searchResources(query);
-            return ResponseEntity.ok(results);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body("Internal server error");
-        }
+    public ResponseEntity<List<ResourceDTO>> search(@RequestParam String query) {
+        List<ResourceDTO> results = resourceService.searchResources(query);
+        return ResponseEntity.ok(results);
     }
 
 
@@ -218,7 +176,7 @@ public class MinioController {
             @ApiResponse(responseCode = "500", description = "Internal server error")
     })
     public ResponseEntity<Object> getResource(@Parameter(description = "Path to the resource in MinIO", required = true, example = "folder/file.txt")
-                                              @RequestParam String path) throws Exception {
+                                              @RequestParam String path) {
         Object resource = resourceService.getResource(path);
         return ResponseEntity.ok(resource);
     }
