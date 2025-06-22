@@ -21,7 +21,6 @@ public class UserController {
 
     private final SecurityUtils securityUtils;
 
-
     public UserController(SecurityUtils securityUtils) {
         this.securityUtils = securityUtils;
     }

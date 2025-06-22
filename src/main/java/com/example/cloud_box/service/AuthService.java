@@ -1,23 +1,28 @@
 package com.example.cloud_box.service;
 
-import com.example.cloud_box.exception.InvalidCredentialsException;
 import com.example.cloud_box.exception.UserAlreadyExistsException;
 import com.example.cloud_box.model.User;
 import com.example.cloud_box.repository.UserRepository;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AuthService {
     private final UserRepository userRepository;
     private final BCryptPasswordEncoder passwordEncoder;
     private final UserFolderService userFolderService;
+    private final AuthenticationManager authenticationManager;
 
-    public AuthService(UserRepository userRepository, BCryptPasswordEncoder passwordEncoder, UserFolderService userFolderService) {
+
+    public AuthService(UserRepository userRepository, BCryptPasswordEncoder passwordEncoder, UserFolderService userFolderService, AuthenticationManager authenticationManager) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.userFolderService = userFolderService;
+        this.authenticationManager = authenticationManager;
     }
 
     public User registerUser(String username, String password) {
@@ -39,14 +44,11 @@ public class AuthService {
         return savedUser;
     }
 
-
-    public User authenticateUser(String username, String password) {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new InvalidCredentialsException("Invalid username or password"));
-        if (!passwordEncoder.matches(password, user.getPassword())) {
-            throw new InvalidCredentialsException("Invalid username or password");
-        }
-        return user;
+    public Authentication authenticateUser(String username, String password) {
+        UsernamePasswordAuthenticationToken authToken =
+                new UsernamePasswordAuthenticationToken(username, password);
+        Authentication authentication = authenticationManager.authenticate(authToken);
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+        return authentication;
     }
-
 }

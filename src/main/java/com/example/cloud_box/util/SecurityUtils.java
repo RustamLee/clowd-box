@@ -34,18 +34,6 @@ public class SecurityUtils {
                 .getId();
     }
 
-    public void authenticateUserSession(String username, HttpServletRequest request) {
-        Authentication authentication =
-                new UsernamePasswordAuthenticationToken(username, null, List.of());
-
-        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
-        securityContext.setAuthentication(authentication);
-
-        HttpSession session = request.getSession(true);
-        session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, securityContext);
-        request.changeSessionId();
-    }
-
     public User getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated()) {

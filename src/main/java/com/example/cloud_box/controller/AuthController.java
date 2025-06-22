@@ -6,7 +6,6 @@ import com.example.cloud_box.dto.RegisterRequestDTO;
 import com.example.cloud_box.dto.RegisterResponseDTO;
 import com.example.cloud_box.model.User;
 import com.example.cloud_box.service.AuthService;
-import com.example.cloud_box.util.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -14,12 +13,15 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,11 +32,9 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
-    private final SecurityUtils securityUtils;
 
-    public AuthController(AuthService authService, SecurityUtils securityUtils) {
+    public AuthController(AuthService authService) {
         this.authService = authService;
-        this.securityUtils = securityUtils;
     }
 
     @Operation(summary = "Register a new user")
@@ -46,16 +46,20 @@ public class AuthController {
             @ApiResponse(responseCode = "500", description = "Server error during registration", content = @Content)
     })
     @PostMapping("/sign-up")
-    public ResponseEntity<RegisterResponseDTO> register(@Valid @RequestBody RegisterRequestDTO registerRequestDTO, HttpServletRequest request) {
-        User user = authService.registerUser(
-                registerRequestDTO.username(),
-                registerRequestDTO.password()
+    public ResponseEntity<RegisterResponseDTO> register(@Valid @RequestBody RegisterRequestDTO dto, HttpServletRequest request) {
+        User user = authService.registerUser(dto.username(), dto.password());
+        Authentication authentication = authService.authenticateUser(dto.username(), dto.password());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+        HttpSession session = request.getSession(true);
+        session.setAttribute(
+                HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,
+                SecurityContextHolder.getContext()
         );
-        securityUtils.authenticateUserSession(user.getUsername(), request);
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(new RegisterResponseDTO(user.getUsername()));
     }
+
 
     @Operation(summary = "Login a user")
     @ApiResponses(value = {
@@ -65,14 +69,14 @@ public class AuthController {
             @ApiResponse(responseCode = "500", description = "Server error during login", content = @Content)
     })
     @PostMapping("/sign-in")
-    public ResponseEntity<LoginResponseDTO> login(@Valid @RequestBody LoginRequestDTO loginRequestDTO, HttpServletRequest request) {
-
-        User user = authService.authenticateUser(loginRequestDTO.username(), loginRequestDTO.password());
-
-        securityUtils.authenticateUserSession(user.getUsername(), request);
-
-        return ResponseEntity.ok(new LoginResponseDTO(user.getUsername()));
+    public ResponseEntity<LoginResponseDTO> login(@Valid @RequestBody LoginRequestDTO dto, HttpServletRequest request) {
+        Authentication authentication = authService.authenticateUser(dto.username(), dto.password());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+        HttpSession session = request.getSession(true);
+        session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, SecurityContextHolder.getContext());
+        return ResponseEntity.ok(new LoginResponseDTO(authentication.getName()));
     }
+
 
     @Operation(summary = "Log out the current user")
     @ApiResponses(value = {

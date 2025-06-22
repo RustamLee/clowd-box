@@ -110,6 +110,7 @@ public class ResourceController {
         return ResponseEntity.ok(contents);
     }
 
+
     // delete a resource
     @Operation(summary = "Delete a resource from MinIO",
             description = "Deletes the resource located at the specified path.")
