@@ -27,7 +27,7 @@ public class ResourceController {
 
     private final ResourceService resourceService;
 
-    // метод для создания пустой папки в корневой директории пользователя
+    // create an empty folder
     @PostMapping("/directory")
     @Operation(summary = "Create a new directory",
             description = "Creates a new directory at the specified path in the storage.")
@@ -46,7 +46,7 @@ public class ResourceController {
         return ResponseEntity.status(HttpStatus.CREATED).body(folder);
     }
 
-    // метод для загрузки ресурса (файл или папка)  в MinIO
+    // upload files
     @PostMapping("/resource")
     @Operation(summary = "Upload files to MinIO",
             description = "Uploads one or more files to the user's root folder in MinIO. Optionally accepts a subpath.")
@@ -68,12 +68,12 @@ public class ResourceController {
                 .flatMap(List::stream)
                 .collect(Collectors.toList());
 
-        List<ResourceDTO> uploaded = resourceService.uploadResource(path, files);
+        List<ResourceDTO> uploaded = resourceService.upload(path, files);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(uploaded);
     }
 
-    // метод для перемещения ресурса (файла или папки) из одного места в другое а также для переименования
+    // rename/move a resource
     @GetMapping("/resource/move")
     @Operation(
             summary = "Move or rename a resource",
@@ -92,7 +92,7 @@ public class ResourceController {
         return ResponseEntity.ok(result);
     }
 
-    // Метод для получения списка содержимого директории для конкретного пользователя
+    // get list of resources
     @Operation(summary = "Get contents of a directory",
             description = "Returns the list of files and folders inside the specified directory path.")
     @ApiResponses(value = {
@@ -110,7 +110,7 @@ public class ResourceController {
         return ResponseEntity.ok(contents);
     }
 
-    // метод для удаления ресурса (файла или папки) из MinIO
+    // delete a resource
     @Operation(summary = "Delete a resource from MinIO",
             description = "Deletes the resource located at the specified path.")
     @ApiResponses(value = {
@@ -124,11 +124,11 @@ public class ResourceController {
             @Parameter(description = "Path to the resource in MinIO", required = true, example = "folder/file.txt")
             @RequestParam String path) {
         System.out.println("Delete resource controller called with path: " + path);
-        resourceService.deleteResource(path);
+        resourceService.delete(path);
         return ResponseEntity.noContent().build();
     }
 
-    // метод для скачивания ресурса (файла или папки) из MinIO
+    // download a resource
     @GetMapping("/resource/download")
     @Operation(summary = "Download a resource from MinIO",
             description = "Streams the resource file located at the specified path to the client.")
@@ -142,11 +142,9 @@ public class ResourceController {
             @Parameter(description = "Path to the resource in MinIO", required = true, example = "folder/file.txt")
             @RequestParam String path, HttpServletResponse response) {
         System.out.println("[MinioController.download] Downloading resource at path: " + path);
-        resourceService.downloadResource(path, response);
+        resourceService.download(path, response);
     }
 
-
-    // метод для поиска ресурса (файла или папки) в MinIO
     // find by name
     @Operation(summary = "Search resources by name",
             description = "Finds and returns a list of resources matching the search query.")
@@ -160,12 +158,11 @@ public class ResourceController {
     })
     @GetMapping("/resource/search")
     public ResponseEntity<List<ResourceDTO>> search(@RequestParam String query) {
-        List<ResourceDTO> results = resourceService.searchResources(query);
+        List<ResourceDTO> results = resourceService.search(query);
         return ResponseEntity.ok(results);
     }
 
-
-    // get info about all resources
+    // get info about a resource
     @GetMapping("/resource")
     @Operation(summary = "Get information about a resource in MinIO",
             description = "Returns metadata or details about the resource located at the specified path.")
@@ -177,9 +174,8 @@ public class ResourceController {
     })
     public ResponseEntity<Object> getResource(@Parameter(description = "Path to the resource in MinIO", required = true, example = "folder/file.txt")
                                               @RequestParam String path) {
-        Object resource = resourceService.getResource(path);
+        Object resource = resourceService.get(path);
         return ResponseEntity.ok(resource);
     }
-
 
 }

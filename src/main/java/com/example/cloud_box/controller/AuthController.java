@@ -4,9 +4,9 @@ import com.example.cloud_box.dto.LoginRequestDTO;
 import com.example.cloud_box.dto.LoginResponseDTO;
 import com.example.cloud_box.dto.RegisterRequestDTO;
 import com.example.cloud_box.dto.RegisterResponseDTO;
-import com.example.cloud_box.exception.InvalidCredentialsException;
 import com.example.cloud_box.model.User;
 import com.example.cloud_box.service.AuthService;
+import com.example.cloud_box.util.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -14,29 +14,28 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.HttpSession;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
-import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/auth/")
 public class AuthController {
 
     private final AuthService authService;
+    private final SecurityUtils securityUtils;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, SecurityUtils securityUtils) {
         this.authService = authService;
+        this.securityUtils = securityUtils;
     }
-
 
     @Operation(summary = "Register a new user")
     @ApiResponses(value = {
@@ -47,24 +46,16 @@ public class AuthController {
             @ApiResponse(responseCode = "500", description = "Server error during registration", content = @Content)
     })
     @PostMapping("/sign-up")
-    public ResponseEntity<RegisterResponseDTO> register(@RequestBody RegisterRequestDTO registerRequestDTO, HttpServletRequest request) {
+    public ResponseEntity<RegisterResponseDTO> register(@Valid @RequestBody RegisterRequestDTO registerRequestDTO, HttpServletRequest request) {
         User user = authService.registerUser(
-                registerRequestDTO.getUsername(),
-                registerRequestDTO.getPassword()
+                registerRequestDTO.username(),
+                registerRequestDTO.password()
         );
-
-        Authentication authentication = new UsernamePasswordAuthenticationToken(user.getUsername(), null, List.of());
-        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
-        securityContext.setAuthentication(authentication);
-
-        HttpSession session = request.getSession(true);
-        session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, securityContext);
-
+        securityUtils.authenticateUserSession(user.getUsername(), request);
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(new RegisterResponseDTO(user.getUsername()));
     }
-
 
     @Operation(summary = "Login a user")
     @ApiResponses(value = {
@@ -74,24 +65,14 @@ public class AuthController {
             @ApiResponse(responseCode = "500", description = "Server error during login", content = @Content)
     })
     @PostMapping("/sign-in")
-    public ResponseEntity<LoginResponseDTO> login(
-            @RequestBody LoginRequestDTO loginRequestDTO,
-            HttpServletRequest request) {
-        User user = authService.authenticateUser(loginRequestDTO.getUsername(), loginRequestDTO.getPassword());
+    public ResponseEntity<LoginResponseDTO> login(@Valid @RequestBody LoginRequestDTO loginRequestDTO, HttpServletRequest request) {
 
-        if (user == null) {
-            throw new InvalidCredentialsException("Invalid username or password");
-        }
-        Authentication authentication = new UsernamePasswordAuthenticationToken(user.getUsername(), null, List.of());
-        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
-        securityContext.setAuthentication(authentication);
+        User user = authService.authenticateUser(loginRequestDTO.username(), loginRequestDTO.password());
 
-        HttpSession session = request.getSession(true);
-        session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, securityContext);
+        securityUtils.authenticateUserSession(user.getUsername(), request);
 
         return ResponseEntity.ok(new LoginResponseDTO(user.getUsername()));
     }
-
 
     @Operation(summary = "Log out the current user")
     @ApiResponses(value = {
@@ -107,9 +88,5 @@ public class AuthController {
         }
         return ResponseEntity.noContent().build();
     }
-
-
-
-
 
 }

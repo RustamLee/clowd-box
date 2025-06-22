@@ -1,9 +1,17 @@
 package com.example.cloud_box.util;
 
+import com.example.cloud_box.model.User;
 import com.example.cloud_box.repository.UserRepository;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpSession;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.stereotype.Component;
+
+import java.util.List;
 
 @Component
 public class SecurityUtils {
@@ -25,5 +33,29 @@ public class SecurityUtils {
                 .orElseThrow(() -> new IllegalStateException("User not found: " + username))
                 .getId();
     }
+
+    public void authenticateUserSession(String username, HttpServletRequest request) {
+        Authentication authentication =
+                new UsernamePasswordAuthenticationToken(username, null, List.of());
+
+        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+        securityContext.setAuthentication(authentication);
+
+        HttpSession session = request.getSession(true);
+        session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, securityContext);
+        request.changeSessionId();
+    }
+
+    public User getCurrentUser() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new IllegalStateException("No authenticated user");
+        }
+
+        String username = auth.getName();
+        return userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalStateException("User not found: " + username));
+    }
+
 }
 

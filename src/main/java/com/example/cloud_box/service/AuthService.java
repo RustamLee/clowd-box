@@ -6,6 +6,7 @@ import com.example.cloud_box.model.User;
 import com.example.cloud_box.repository.UserRepository;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AuthService {
@@ -38,14 +39,10 @@ public class AuthService {
         return savedUser;
     }
 
+
     public User authenticateUser(String username, String password) {
         User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("Invalid username or password"));
-        System.out.println("Username: " + username);
-        System.out.println("Password: " + password);
-        System.out.println("Encoded: " + user.getPassword());
-        System.out.println("Match: " + passwordEncoder.matches(password, user.getPassword()));
-
+                .orElseThrow(() -> new InvalidCredentialsException("Invalid username or password"));
         if (!passwordEncoder.matches(password, user.getPassword())) {
             throw new InvalidCredentialsException("Invalid username or password");
         }

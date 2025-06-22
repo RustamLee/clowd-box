@@ -1,18 +1,16 @@
 package com.example.cloud_box.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import jakarta.validation.constraints.NotBlank;
+
 
 @Schema(description = "User login request")
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-public class LoginRequestDTO {
-    @Schema(description = "Username", example = "john_week")
-    private String username;
+public record LoginRequestDTO(
+        @NotBlank(message = "Username must not be blank")
+        @Schema(description = "Username", example = "john_week")
+        String username,
 
-    @Schema(description = "Password", example = "myPass123")
-    private String password;
-}
+        @NotBlank(message = "Password must not be blank")
+        @Schema(description = "Password", example = "myPass123")
+        String password
+) {}

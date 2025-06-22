@@ -1,7 +1,5 @@
 package com.example.cloud_box.util;
 
-import com.example.cloud_box.model.ResourceType;
-
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -14,16 +12,16 @@ public class ResourcePathUtils {
         return "user-" + userId + "-files/";
     }
 
+    public static String normalizePath(String path, Long userId, boolean isDirectory) {
+        String base = normalizePath(path, userId);
+        return isDirectory && !base.endsWith("/") ? base + "/" : base;
+    }
 
     public static String normalizePath(String path, Long userId) {
         if (path == null || path.isBlank()) {
             return getUserRootPath(userId);
         }
-
-        String fixedPath = path.replace("\\", "/");
-        Path nioPath = Paths.get(fixedPath).normalize();
-
-        String normalized = nioPath.toString().replace("\\", "/");
+        String normalized = Paths.get(path).normalize().toString().replace("\\", "/");
 
         if (normalized.startsWith("/")) {
             normalized = normalized.substring(1);
@@ -47,7 +45,6 @@ public class ResourcePathUtils {
         return name;
     }
 
-
     public static String extractParentPath(String objectName) {
         Path path = Paths.get(objectName).normalize();
         Path parent = path.getParent();
@@ -69,11 +66,6 @@ public class ResourcePathUtils {
         }
 
         return normalized;
-    }
-
-    public static String normalizePath(String path, Long userId, boolean isDirectory) {
-        String base = normalizePath(path, userId);
-        return isDirectory && !base.endsWith("/") ? base + "/" : base;
     }
 
 }

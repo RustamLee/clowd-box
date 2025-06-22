@@ -2,7 +2,7 @@ package com.example.cloud_box.controller;
 
 import com.example.cloud_box.dto.UserProfileDTO;
 import com.example.cloud_box.model.User;
-import com.example.cloud_box.repository.UserRepository;
+import com.example.cloud_box.util.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -10,23 +10,20 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.HashMap;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/user")
 public class UserController {
 
+    private final SecurityUtils securityUtils;
 
-    private final UserRepository userRepository;
 
-    public UserController(UserRepository userRepository) {
-        this.userRepository = userRepository;
+    public UserController(SecurityUtils securityUtils) {
+        this.securityUtils = securityUtils;
     }
 
     @GetMapping("/me")
@@ -41,8 +38,7 @@ public class UserController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Not authenticated");
         }
 
-        User user = userRepository.findByUsername(authentication.getName())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        User user = securityUtils.getCurrentUser();
 
         UserProfileDTO response = new UserProfileDTO(
                 user.getId(),

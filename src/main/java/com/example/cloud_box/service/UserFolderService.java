@@ -1,10 +1,10 @@
 package com.example.cloud_box.service;
 
+import com.example.cloud_box.util.MimeTypes;
 import org.springframework.stereotype.Service;
 import java.io.ByteArrayInputStream;
 
 
-// Сервис для создания корневой папки пользователя в MinIO при регистрации нового пользователя.
 @Service
 public class UserFolderService {
 
@@ -17,7 +17,7 @@ public class UserFolderService {
     public void createUserRootFolder(Long userId) {
         String folder = "user-" + userId + "-files/";
         try {
-            minioService.uploadFile(folder, new ByteArrayInputStream(new byte[0]), "application/octet-stream");
+            minioService.uploadFile(folder, new ByteArrayInputStream(new byte[0]), MimeTypes.CONTENT_TYPE_OCTET_STREAM);
         } catch (Exception e) {
             throw new RuntimeException("Failed to create user folder in MinIO", e);
         }
