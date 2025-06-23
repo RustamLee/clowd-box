@@ -3,17 +3,20 @@ package com.example.cloud_box.exception;
 import com.example.cloud_box.dto.ErrorResponseDTO;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.nio.file.AccessDeniedException;
+import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(UserAlreadyExistsException.class)
     public ResponseEntity<Object> handleUserAlreadyExistsException(UserAlreadyExistsException ex) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+        return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ErrorResponseDTO(ex.getMessage()));
     }
 
@@ -50,8 +53,8 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<ErrorResponseDTO> handleUnauthorized(AccessDeniedException ex) {
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+    public ResponseEntity<ErrorResponseDTO> handleAccessDenied(AccessDeniedException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(new ErrorResponseDTO(ex.getMessage()));
     }
 
@@ -83,6 +86,23 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponseDTO> handleInvalidQueryException(InvalidQueryException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(new ErrorResponseDTO(ex.getMessage()));
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ErrorResponseDTO> handleValidationException(MethodArgumentNotValidException ex) {
+        String errorMsg = ex.getBindingResult()
+                .getFieldErrors()
+                .stream()
+                .map(error -> error.getField() + ": " + error.getDefaultMessage())
+                .collect(Collectors.joining("; "));
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ErrorResponseDTO(errorMsg));
+    }
+
+    @ExceptionHandler(BadCredentialsException.class)
+    public ResponseEntity<ErrorResponseDTO> handleBadCredentials(BadCredentialsException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(new ErrorResponseDTO("Invalid username or password"));
     }
 
 

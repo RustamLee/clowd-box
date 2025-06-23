@@ -4,30 +4,31 @@ import com.example.cloud_box.dto.LoginRequestDTO;
 import com.example.cloud_box.dto.RegisterRequestDTO;
 import com.example.cloud_box.service.UserFolderService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.Cookie;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.redis.connection.RedisConnection;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.springframework.jdbc.core.JdbcTemplate;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
-import org.springframework.test.context.ActiveProfiles;
 
-/**
- *     testRegistration()
- *     testDuplicateRegistration()
- *     testLoginSuccess()
- *     testLoginFail()
- *     testLogout()
- */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -42,17 +43,24 @@ public class AuthIntegrationTest {
     private ObjectMapper objectMapper;
 
     @Autowired
-    private UserFolderService userFolderService; // должен быть замокан, иначе может обратиться к MinIO
+    private UserFolderService userFolderService;
+
+    @Autowired
+    private RedisConnectionFactory connectionFactory;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Container
     static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0.32")
             .withDatabaseName("cloud_box_db")
             .withUsername("clouduser")
-            .withPassword("cloudpass");
+            .withPassword("CloudUserPass2025");
 
     @Container
     static GenericContainer<?> redis = new GenericContainer<>("redis:7.2.4")
-            .withExposedPorts(6379);
+            .withExposedPorts(6379)
+            .waitingFor(Wait.forListeningPort());
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
@@ -66,39 +74,59 @@ public class AuthIntegrationTest {
 
     @Test
     void testUserRegistrationLoginAndLogout() throws Exception {
-        // Registration
         RegisterRequestDTO registerRequest = new RegisterRequestDTO("test_user", "testPass123");
+
+        // registration
         mockMvc.perform(post("/api/auth/sign-up")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(registerRequest)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.username").value("test_user"))
-                .andExpect(cookie().exists("SESSION")); // важно: SESSION кука
+                .andExpect(cookie().exists("SESSION"));
 
-        // Duplicate registration
+        // registration with existing username — error 409
         mockMvc.perform(post("/api/auth/sign-up")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(registerRequest)))
                 .andExpect(status().isConflict());
 
-        // Successful login
-        LoginRequestDTO loginRequest = new LoginRequestDTO("test_user", "testPass123");
-        mockMvc.perform(post("/api/auth/sign-in")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(loginRequest)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.username").value("test_user"))
-                .andExpect(cookie().exists("SESSION"));
-
-        // Failed login
+        // invalid login attempt with wrong password — error 401
         LoginRequestDTO wrongLogin = new LoginRequestDTO("test_user", "wrongPass");
         mockMvc.perform(post("/api/auth/sign-in")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(wrongLogin)))
                 .andExpect(status().isUnauthorized());
 
-        // Logout (не обязательно будет успешным без сессии, зависит от конфигурации)
-        mockMvc.perform(post("/api/auth/sign-out"))
+        // login correctly with valid credentials
+        LoginRequestDTO loginRequest = new LoginRequestDTO("test_user", "testPass123");
+        MvcResult loginResult = mockMvc.perform(post("/api/auth/sign-in")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(loginRequest)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.username").value("test_user"))
+                .andExpect(cookie().exists("SESSION"))
+                .andReturn();
+
+        Cookie sessionCookie = loginResult.getResponse().getCookie("SESSION");
+
+        // 6. Logout — with SESSION
+        mockMvc.perform(post("/api/auth/sign-out")
+                        .cookie(sessionCookie))
                 .andExpect(status().isNoContent());
     }
+
+    @AfterEach
+    void cleanupRedis() {
+        try (RedisConnection connection = connectionFactory.getConnection()) {
+            connection.flushDb();
+        }
+    }
+
+    @AfterEach
+    void cleanupDb() {
+        jdbcTemplate.execute("DELETE FROM users");
+        jdbcTemplate.execute("ALTER TABLE users AUTO_INCREMENT = 1");
+    }
+
+
 }
