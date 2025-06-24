@@ -176,30 +176,35 @@ public class ResourceService {
         if (query == null || query.isEmpty()) {
             throw new InvalidQueryException("Query cannot be null or empty");
         }
-
         try {
             Long userId = securityUtils.getCurrentUserId();
             String userPrefix = ResourcePathUtils.getUserRootPath(userId);
             Iterable<Result<Item>> results = minioService.listObjects(userPrefix, true);
-
             List<ResourceDTO> matches = new ArrayList<>();
-
             for (Result<Item> result : results) {
                 Item item = result.get();
-
                 if (item.objectName().equals(userPrefix)) {
                     continue;
                 }
-                String relativeName = item.objectName().substring(userPrefix.length());
-                if (relativeName.toLowerCase(Locale.ROOT).contains(query.toLowerCase(Locale.ROOT))) {
+                String relativePath = item.objectName().substring(userPrefix.length());
+                String nameOnly;
+                if (relativePath.endsWith("/")) {
+                    String trimmed = relativePath.substring(0, relativePath.length() - 1);
+                    nameOnly = trimmed.substring(trimmed.lastIndexOf("/") + 1);
+                } else {
+                    nameOnly = relativePath.substring(relativePath.lastIndexOf("/") + 1);
+                }
+                if (nameOnly.toLowerCase(Locale.ROOT).contains(query.toLowerCase(Locale.ROOT))) {
                     matches.add(buildResourceDto(item));
                 }
             }
+
             return matches;
         } catch (Exception e) {
             throw new MinioOperationException("Failed to search resources", e);
         }
     }
+
 
     public ResourceDTO get(String path) {
         if (path == null || path.isEmpty()) {
