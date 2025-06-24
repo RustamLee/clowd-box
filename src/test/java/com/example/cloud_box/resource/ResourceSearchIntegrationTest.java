@@ -38,35 +38,19 @@ public class ResourceSearchIntegrationTest extends AbstractIntegrationTest {
 
     private Cookie sessionCookieUser1;
     private Cookie sessionCookieUser2;
+    private static final String USER1 = "user1";
+    private static final String USER2 = "user2";
+    private static final String PASS1 = "pass1";
+    private static final String PASS2 = "pass2";
+
 
     @BeforeEach
     void setUp() throws Exception {
-        userRepository.deleteByUsername("user1");
-        userRepository.deleteByUsername("user2");
+        userRepository.deleteByUsername(USER1);
+        userRepository.deleteByUsername(USER2);
 
-        mockMvc.perform(post("/api/auth/sign-up")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new RegisterRequestDTO("user1", "pass1"))))
-                .andExpect(status().isCreated());
-
-        mockMvc.perform(post("/api/auth/sign-up")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new RegisterRequestDTO("user2", "pass2"))))
-                .andExpect(status().isCreated());
-
-        MvcResult loginResult1 = mockMvc.perform(post("/api/auth/sign-in")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new LoginRequestDTO("user1", "pass1"))))
-                .andExpect(status().isOk())
-                .andReturn();
-        sessionCookieUser1 = loginResult1.getResponse().getCookie("SESSION");
-
-        MvcResult loginResult2 = mockMvc.perform(post("/api/auth/sign-in")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new LoginRequestDTO("user2", "pass2"))))
-                .andExpect(status().isOk())
-                .andReturn();
-        sessionCookieUser2 = loginResult2.getResponse().getCookie("SESSION");
+        sessionCookieUser1 = registerAndLogin(USER1, PASS1);
+        sessionCookieUser2 = registerAndLogin(USER2, PASS2);
 
         MockMultipartFile fileUser1 = new MockMultipartFile(
                 "files", "user1_file.txt", "text/plain", "content user1".getBytes());
@@ -85,9 +69,24 @@ public class ResourceSearchIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isCreated());
     }
 
+    private Cookie registerAndLogin(String username, String password) throws Exception {
+        mockMvc.perform(post("/api/auth/sign-up")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RegisterRequestDTO(username, password))))
+                .andExpect(status().isCreated());
+
+        MvcResult result = mockMvc.perform(post("/api/auth/sign-in")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new LoginRequestDTO(username, password))))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        return result.getResponse().getCookie("SESSION");
+    }
+
     @Test
     void userShouldFindOnlyOwnFiles() throws Exception {
-        // user1 ищет файл user1_file
+        // user1 searches for user1's file
         MvcResult resultUser1 = mockMvc.perform(get("/api/resource/search")
                         .param("query", "user1_file")
                         .cookie(sessionCookieUser1))
@@ -98,6 +97,7 @@ public class ResourceSearchIntegrationTest extends AbstractIntegrationTest {
         assertTrue(bodyUser1.contains("user1_file.txt"), "User1 should see own file");
         assertFalse(bodyUser1.contains("user2_file.txt"), "User1 should NOT see user2's file");
 
+        // user2 searches for user2's file
         MvcResult resultUser2 = mockMvc.perform(get("/api/resource/search")
                         .param("query", "user2_file")
                         .cookie(sessionCookieUser2))

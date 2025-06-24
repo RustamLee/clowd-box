@@ -40,6 +40,10 @@ public class RedisSessionIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private UserRepository userRepository;
 
+    private static final String TEST_USERNAME = "redisTestUser";
+    private static final String TEST_PASSWORD = "testPass123";
+
+
     @BeforeEach
     void cleanup() {
         userRepository.deleteByUsername("redisTestUser");
@@ -47,16 +51,16 @@ public class RedisSessionIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void testSessionStoredAndRemovedInRedis() throws Exception {
-        RegisterRequestDTO registerRequest = new RegisterRequestDTO("redisTestUser", "testPass123");
+        // Register a new user
         mockMvc.perform(post("/api/auth/sign-up")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(registerRequest)))
+                        .content(objectMapper.writeValueAsString(registerRequest())))
                 .andExpect(status().isCreated());
 
-        LoginRequestDTO loginRequest = new LoginRequestDTO("redisTestUser", "testPass123");
+        // Log-in the user and get the session cookie
         MvcResult loginResult = mockMvc.perform(post("/api/auth/sign-in")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(loginRequest)))
+                        .content(objectMapper.writeValueAsString(loginRequest())))
                 .andExpect(status().isOk())
                 .andExpect(cookie().exists("SESSION"))
                 .andReturn();
@@ -64,16 +68,28 @@ public class RedisSessionIntegrationTest extends AbstractIntegrationTest {
         Cookie sessionCookie = loginResult.getResponse().getCookie("SESSION");
         assertNotNull(sessionCookie);
 
-        String encodedSessionId = sessionCookie.getValue();
-        String decodedSessionId = new String(Base64.getDecoder().decode(encodedSessionId));
-
-        String redisSessionKey = "spring:session:sessions:" + decodedSessionId;
+        // Verify that the session is stored in Redis
+        String redisSessionKey = "spring:session:sessions:" + getDecodedSessionId(sessionCookie.getValue());
         assertTrue(redisTemplate.hasKey(redisSessionKey));
 
+        // log-out the user and verify session removal
         mockMvc.perform(post("/api/auth/sign-out")
                         .cookie(sessionCookie))
                 .andExpect(status().isNoContent());
 
         assertFalse(redisTemplate.hasKey(redisSessionKey));
     }
+
+    private RegisterRequestDTO registerRequest() {
+        return new RegisterRequestDTO(TEST_USERNAME, TEST_PASSWORD);
+    }
+
+    private LoginRequestDTO loginRequest() {
+        return new LoginRequestDTO(TEST_USERNAME, TEST_PASSWORD);
+    }
+
+    private String getDecodedSessionId(String encodedSessionId) {
+        return new String(Base64.getDecoder().decode(encodedSessionId));
+    }
+
 }

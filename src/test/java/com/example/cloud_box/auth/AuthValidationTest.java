@@ -1,5 +1,6 @@
 package com.example.cloud_box.auth;
 
+import com.example.cloud_box.common.AbstractIntegrationTest;
 import com.example.cloud_box.dto.RegisterRequestDTO;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Nested;
@@ -17,7 +18,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-public class AuthValidationTest {
+public class AuthValidationTest extends AbstractIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -26,6 +27,8 @@ public class AuthValidationTest {
     private ObjectMapper objectMapper;
 
     private static final String REGISTER_URL = "/api/auth/sign-up";
+    private static final String VALID_USERNAME = "validUser";
+    private static final String VALID_PASSWORD = "validPass123";
 
     private void performInvalidRegister(RegisterRequestDTO dto) throws Exception {
         mockMvc.perform(post(REGISTER_URL)
@@ -39,25 +42,25 @@ public class AuthValidationTest {
 
         @Test
         void usernameTooShort() throws Exception {
-            RegisterRequestDTO dto = new RegisterRequestDTO("abc", "validPass123");
+            RegisterRequestDTO dto = new RegisterRequestDTO("abc", VALID_PASSWORD);
             performInvalidRegister(dto);
         }
 
         @Test
         void usernameTooLong() throws Exception {
-            RegisterRequestDTO dto = new RegisterRequestDTO("a".repeat(21), "validPass123");
+            RegisterRequestDTO dto = new RegisterRequestDTO("a".repeat(21), VALID_PASSWORD);
             performInvalidRegister(dto);
         }
 
         @Test
         void usernameWithInvalidCharacters() throws Exception {
-            RegisterRequestDTO dto = new RegisterRequestDTO("user_123!", "validPass123");
+            RegisterRequestDTO dto = new RegisterRequestDTO("user_123!", VALID_PASSWORD);
             performInvalidRegister(dto);
         }
 
         @Test
         void usernameIsBlank() throws Exception {
-            RegisterRequestDTO dto = new RegisterRequestDTO("   ", "validPass123");
+            RegisterRequestDTO dto = new RegisterRequestDTO("   ", VALID_PASSWORD);
             performInvalidRegister(dto);
         }
     }
@@ -67,19 +70,19 @@ public class AuthValidationTest {
 
         @Test
         void passwordTooShort() throws Exception {
-            RegisterRequestDTO dto = new RegisterRequestDTO("validUser", "123");
+            RegisterRequestDTO dto = new RegisterRequestDTO(VALID_USERNAME, "123");
             performInvalidRegister(dto);
         }
 
         @Test
         void passwordTooLong() throws Exception {
-            RegisterRequestDTO dto = new RegisterRequestDTO("validUser", "p".repeat(21));
+            RegisterRequestDTO dto = new RegisterRequestDTO(VALID_USERNAME, "p".repeat(21));
             performInvalidRegister(dto);
         }
 
         @Test
         void passwordIsBlank() throws Exception {
-            RegisterRequestDTO dto = new RegisterRequestDTO("validUser", "   ");
+            RegisterRequestDTO dto = new RegisterRequestDTO(VALID_USERNAME, "   ");
             performInvalidRegister(dto);
         }
     }

@@ -18,32 +18,43 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 public abstract class AbstractIntegrationTest {
 
     protected static final String BUCKET = "cloudbox";
+    protected static final String MINIO_USER = "minioadmin";
+    protected static final String MINIO_PASS = "minioadmin123";
+    protected static final int MINIO_PORT = 9000;
+
+    private static final String MINIO_IMAGE = "minio/minio:RELEASE.2023-11-20T22-40-07Z";
+    private static final String REDIS_IMAGE = "redis:7.2.4";
+    private static final int REDIS_PORT = 6379;
+    private static final String MYSQL_IMAGE = "mysql:8.0.32";
+    private static final String MYSQL_DB = "cloud_box_db";
+    private static final String MYSQL_USER = "clouduser";
+    private static final String MYSQL_PASS = "CloudUserPass2025";
 
     @Container
-    static GenericContainer<?> minio = new GenericContainer<>("minio/minio:RELEASE.2023-11-20T22-40-07Z")
-            .withEnv("MINIO_ROOT_USER", "minioadmin")
-            .withEnv("MINIO_ROOT_PASSWORD", "minioadmin123")
+    static GenericContainer<?> minio = new GenericContainer<>(MINIO_IMAGE)
+            .withEnv("MINIO_ROOT_USER", MINIO_USER)
+            .withEnv("MINIO_ROOT_PASSWORD", MINIO_PASS)
             .withCommand("server /data")
-            .withExposedPorts(9000)
+            .withExposedPorts(MINIO_PORT)
             .waitingFor(Wait.forListeningPort());
 
     @Container
-    static GenericContainer<?> redis = new GenericContainer<>("redis:7.2.4")
-            .withExposedPorts(6379)
+    static GenericContainer<?> redis = new GenericContainer<>(REDIS_IMAGE)
+            .withExposedPorts(REDIS_PORT)
             .waitingFor(Wait.forListeningPort());
 
     @Container
-    static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0.32")
-            .withDatabaseName("cloud_box_db")
-            .withUsername("clouduser")
-            .withPassword("CloudUserPass2025");
+    static MySQLContainer<?> mysql = new MySQLContainer<>(MYSQL_IMAGE)
+            .withDatabaseName(MYSQL_DB)
+            .withUsername(MYSQL_USER)
+            .withPassword(MYSQL_PASS);
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
         // Minio
         registry.add("minio.url", () -> "http://" + minio.getHost() + ":" + minio.getMappedPort(9000));
-        registry.add("minio.access-key", () -> "minioadmin");
-        registry.add("minio.secret-key", () -> "minioadmin123");
+        registry.add("minio.access-key", () -> MINIO_USER);
+        registry.add("minio.secret-key", () -> MINIO_PASS);
         registry.add("minio.bucket", () -> BUCKET);
 
         // Redis

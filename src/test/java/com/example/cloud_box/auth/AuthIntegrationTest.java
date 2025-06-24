@@ -45,38 +45,40 @@ public class AuthIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    private static final String USERNAME = "testuser";
+    private static final String PASSWORD = "testPass123";
+    private static final String WRONG_PASSWORD = "wrongPass";
+
+
     @Test
     void testUserRegistrationLoginAndLogout() throws Exception {
-        RegisterRequestDTO registerRequest = new RegisterRequestDTO("testuser", "testPass123");
 
         // registration
         mockMvc.perform(post("/api/auth/sign-up")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(registerRequest)))
+                        .content(objectMapper.writeValueAsString(validRegisterRequest())))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.username").value("testuser"))
+                .andExpect(jsonPath("$.username").value(USERNAME))
                 .andExpect(cookie().exists("SESSION"));
 
         // registration with existing username — error 409
         mockMvc.perform(post("/api/auth/sign-up")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(registerRequest)))
+                        .content(objectMapper.writeValueAsString(validRegisterRequest())))
                 .andExpect(status().isConflict());
 
         // invalid login attempt with wrong password — error 401
-        LoginRequestDTO wrongLogin = new LoginRequestDTO("testuser", "wrongPass");
         mockMvc.perform(post("/api/auth/sign-in")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(wrongLogin)))
+                        .content(objectMapper.writeValueAsString(wrongLoginRequest())))
                 .andExpect(status().isUnauthorized());
 
         // login correctly with valid credentials
-        LoginRequestDTO loginRequest = new LoginRequestDTO("testuser", "testPass123");
         MvcResult loginResult = mockMvc.perform(post("/api/auth/sign-in")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(loginRequest)))
+                        .content(objectMapper.writeValueAsString(validLoginRequest())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.username").value("testuser"))
+                .andExpect(jsonPath("$.username").value(USERNAME))
                 .andExpect(cookie().exists("SESSION"))
                 .andReturn();
 
@@ -86,6 +88,19 @@ public class AuthIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/auth/sign-out")
                         .cookie(sessionCookie))
                 .andExpect(status().isNoContent());
+    }
+
+
+    private RegisterRequestDTO validRegisterRequest() {
+        return new RegisterRequestDTO(USERNAME, PASSWORD);
+    }
+
+    private LoginRequestDTO validLoginRequest() {
+        return new LoginRequestDTO(USERNAME, PASSWORD);
+    }
+
+    private LoginRequestDTO wrongLoginRequest() {
+        return new LoginRequestDTO(USERNAME, WRONG_PASSWORD);
     }
 
     @AfterEach

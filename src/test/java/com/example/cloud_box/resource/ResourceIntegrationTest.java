@@ -37,7 +37,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@Testcontainers
 public class ResourceIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
@@ -54,58 +53,55 @@ public class ResourceIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private MinioClient minioClient;
 
-    private static final String BUCKET = "cloudbox";
-
-    @Container
-    static GenericContainer<?> minio = new GenericContainer<>("minio/minio:RELEASE.2023-11-20T22-40-07Z")
-            .withEnv("MINIO_ROOT_USER", "minioadmin")
-            .withEnv("MINIO_ROOT_PASSWORD", "minioadmin123")
-            .withCommand("server /data")
-            .withExposedPorts(9000)
-            .waitingFor(Wait.forListeningPort());
-
-
-    @DynamicPropertySource
-    static void minioProperties(DynamicPropertyRegistry registry) {
-        registry.add("minio.url", () -> "http://" + minio.getHost() + ":" + minio.getMappedPort(9000));
-        registry.add("minio.access-key", () -> "minioadmin");
-        registry.add("minio.secret-key", () -> "minioadmin123");
-        registry.add("minio.bucket", () -> BUCKET);
-    }
-
+    private static final String TEST_USERNAME = "testUser";
+    private static final String TEST_PASSWORD = "testPass123";
 
     @BeforeEach
     void setUp() throws Exception {
-        userRepository.deleteByUsername("testUser");
+        cleanupUser();
+        sessionCookie = registerAndLoginUser(TEST_USERNAME, TEST_PASSWORD);
+        clearMinioBucket();
+    }
 
-        RegisterRequestDTO registerRequest = new RegisterRequestDTO("testUser", "testPass123");
+    private void cleanupUser() {
+        userRepository.deleteByUsername(TEST_USERNAME);
+    }
+
+    private void deleteObjectIfExists(String objectName) {
+        try {
+            minioClient.removeObject(RemoveObjectArgs.builder()
+                    .bucket(BUCKET)
+                    .object(objectName)
+                    .build());
+        } catch (Exception e) {
+            System.err.println("Could not delete object: " + objectName);
+        }
+    }
+
+    private Cookie registerAndLoginUser(String username, String password) throws Exception {
+        RegisterRequestDTO registerRequest = new RegisterRequestDTO(username, password);
         mockMvc.perform(post("/api/auth/sign-up")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(registerRequest)))
                 .andExpect(status().isCreated());
 
-        LoginRequestDTO loginRequest = new LoginRequestDTO("testUser", "testPass123");
+        LoginRequestDTO loginRequest = new LoginRequestDTO(username, password);
         MvcResult result = mockMvc.perform(post("/api/auth/sign-in")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(loginRequest)))
                 .andExpect(status().isOk())
                 .andReturn();
 
-        sessionCookie = result.getResponse().getCookie("SESSION");
-        clearMinio();
+        return result.getResponse().getCookie("SESSION");
     }
 
-    void clearMinio() {
+    void clearMinioBucket() {
         try {
             Iterable<Result<Item>> results = minioClient.listObjects(
                     ListObjectsArgs.builder().bucket(BUCKET).recursive(true).build());
 
             for (Result<Item> result : results) {
-                String objectName = result.get().objectName();
-                minioClient.removeObject(RemoveObjectArgs.builder()
-                        .bucket(BUCKET)
-                        .object(objectName)
-                        .build());
+                deleteObjectIfExists(result.get().objectName());
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -123,27 +119,31 @@ public class ResourceIntegrationTest extends AbstractIntegrationTest {
                 "text/plain", fileContent
         );
 
-        MvcResult result = mockMvc.perform(multipart("/api/resource")
+        mockMvc.perform(multipart("/api/resource")
                         .file(mockFile)
                         .cookie(sessionCookie)
                         .param("path", ""))
-                .andExpect(status().isCreated())
-                .andReturn();
+                .andExpect(status().isCreated());
 
-        System.out.println("RESPONSE STATUS: " + result.getResponse().getStatus());
-        System.out.println("RESPONSE BODY: " + result.getResponse().getContentAsString());
+        User user = userRepository.findByUsername(TEST_USERNAME).orElseThrow();
+        String expectedPath = getUserFilePath(user, fileName);
 
-        User user = userRepository.findByUsername("testUser").orElseThrow();
-        String userId = user.getId().toString();
-        String expectedPath = "user-" + userId + "-files/" + fileName;
+        try (InputStream stream = getFileFromMinio(expectedPath)) {
+            assertNotNull(stream, "Uploaded file should be found in MinIO");
+            assertEquals("Hello, MinIO!", new String(stream.readAllBytes()));
+        }
+    }
 
-        InputStream stream = minioClient.getObject(GetObjectArgs.builder()
+    private String getUserFilePath(User user, String fileName) {
+        return "user-" + user.getId() + "-files/" + fileName;
+    }
+
+
+    private InputStream getFileFromMinio(String path) throws Exception {
+        return minioClient.getObject(GetObjectArgs.builder()
                 .bucket(BUCKET)
-                .object(expectedPath)
+                .object(path)
                 .build());
-
-        assertNotNull(stream, "Uploaded file should be found in MinIO");
-        assertEquals("Hello, MinIO!", new String(stream.readAllBytes()));
     }
 
     @Test
@@ -162,16 +162,12 @@ public class ResourceIntegrationTest extends AbstractIntegrationTest {
                         .param("path", ""))
                 .andExpect(status().isCreated());
 
-        User user = userRepository.findByUsername("testUser").orElseThrow();
-        String userId = user.getId().toString();
-        String expectedPath = "user-" + userId + "-files/" + fileName;
+        User user = userRepository.findByUsername(TEST_USERNAME).orElseThrow();
+        String expectedPath = getUserFilePath(user, fileName);
 
-        InputStream stream = minioClient.getObject(GetObjectArgs.builder()
-                .bucket(BUCKET)
-                .object(expectedPath)
-                .build());
-        assertNotNull(stream, "File should exist before deletion");
-        stream.close();
+        try (InputStream stream = getFileFromMinio(expectedPath)) {
+            assertNotNull(stream, "File should exist before deletion");
+        }
 
         mockMvc.perform(delete("/api/resource")
                         .param("path", fileName)
@@ -208,7 +204,7 @@ public class ResourceIntegrationTest extends AbstractIntegrationTest {
                         .param("path", ""))
                 .andExpect(status().isCreated());
 
-        User user = userRepository.findByUsername("testUser").orElseThrow();
+        User user = userRepository.findByUsername(TEST_USERNAME).orElseThrow();
         String userId = user.getId().toString();
 
         String oldFilePath = "user-" + userId + "-files/" + oldFileName;
@@ -229,13 +225,9 @@ public class ResourceIntegrationTest extends AbstractIntegrationTest {
                     .build());
         });
 
-        InputStream stream = minioClient.getObject(GetObjectArgs.builder()
-                .bucket(BUCKET)
-                .object(newFilePath)
-                .build());
-
-        assertNotNull(stream);
-        assertEquals("Content for rename test", new String(stream.readAllBytes()));
+        try (InputStream stream = getFileFromMinio(newFilePath)) {
+            assertNotNull(stream);
+            assertEquals("Content for rename test", new String(stream.readAllBytes()));
+        }
     }
 }
-
