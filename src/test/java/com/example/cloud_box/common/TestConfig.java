@@ -1,4 +1,4 @@
-package com.example.cloud_box;
+package com.example.cloud_box.common;
 
 import com.example.cloud_box.service.UserFolderService;
 import org.mockito.Mockito;

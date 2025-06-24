@@ -60,7 +60,6 @@ public class AuthController {
                 .body(new RegisterResponseDTO(user.getUsername()));
     }
 
-
     @Operation(summary = "Login a user")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "User logged in successfully",

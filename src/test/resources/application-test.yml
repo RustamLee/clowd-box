@@ -12,6 +12,13 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
 
+  data:
+    redis:
+      lettuce:
+        shutdown-timeout: 0
+    session:
+      store-type: redis
+
   flyway:
     enabled: false
 
@@ -19,23 +26,13 @@ spring:
     init:
       mode: never
 
-  session:
-    store-type: redis
-
-  data:
-    redis:
-      host: localhost
-      port: 6379
-      lettuce:
-        shutdown-timeout: 0
-
 server:
   servlet:
     session:
       timeout: 1800s
-
-
-
-#logging:
-#  level:
-#    root: DEBUG
+logging:
+  level:
+    root: INFO
+    io.minio: DEBUG
+    com.example.cloud_box.service: DEBUG
+    com.example.cloud_box: DEBUG

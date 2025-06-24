@@ -23,6 +23,7 @@ services:
       - "6379:6379"
     command: redis-server --appendonly yes
 
+
   minio:
     image: minio/minio
     container_name: minio

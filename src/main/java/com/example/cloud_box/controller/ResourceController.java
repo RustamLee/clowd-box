@@ -9,7 +9,9 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -74,7 +76,6 @@ public class ResourceController {
     }
 
     // rename/move a resource
-    @GetMapping("/resource/move")
     @Operation(
             summary = "Move or rename a resource",
             description = "Moves a file or folder from one path to another, or renames it if only the name changes."
@@ -84,6 +85,7 @@ public class ResourceController {
             @ApiResponse(responseCode = "400", description = "Invalid input: source and destination paths are required"),
             @ApiResponse(responseCode = "500", description = "Internal server error")
     })
+    @GetMapping("/resource/move")
     public ResponseEntity<ResourceDTO> move(
             @RequestParam String from,
             @RequestParam String to
@@ -105,11 +107,9 @@ public class ResourceController {
     })
     @GetMapping("/directory")
     public ResponseEntity<List<ResourceDTO>> listDirectory(@RequestParam(required = false) String path) {
-        System.out.println("[MiniController.listDirectory] Called with path: " + path);
         List<ResourceDTO> contents = resourceService.listDirectory(path);
         return ResponseEntity.ok(contents);
     }
-
 
     // delete a resource
     @Operation(summary = "Delete a resource from MinIO",
