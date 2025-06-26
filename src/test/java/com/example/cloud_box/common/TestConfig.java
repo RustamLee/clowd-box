@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Bean;
 
 @TestConfiguration
 public class TestConfig {
+
     @Bean
     public UserFolderService userFolderService() {
         return Mockito.mock(UserFolderService.class);

@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: jdbc:mysql://localhost:3306/${MYSQL_DATABASE}
-    username: ${MYSQL_USER}
-    password: ${MYSQL_PASSWORD}
+    url:
+    username:
+    password:
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
@@ -18,7 +18,7 @@ spring:
         shutdown-timeout: 0
       host: localhost
       port: 6379
-      password: ${REDIS_PASSWORD}
+      password: redispass
     session:
       store-type: redis
 
@@ -29,14 +29,21 @@ spring:
     init:
       mode: never
 
+  minio:
+    url: http://localhost:9000
+    access-key: minioadmin
+    secret-key: minioadminpass
+    bucket: user-files
+
+
 server:
   servlet:
     session:
       timeout: 1800s
 
-logging:
-  level:
-    root: INFO
-    io.minio: DEBUG
-    com.example.cloud_box.service: DEBUG
-    com.example.cloud_box: DEBUG
+#logging:
+#  level:
+#    root: INFO
+#    io.minio: DEBUG
+#    com.example.cloud_box.service: DEBUG
+#    com.example.cloud_box: DEBUG

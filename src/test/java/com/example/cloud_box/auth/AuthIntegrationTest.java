@@ -4,7 +4,6 @@ import com.example.cloud_box.common.AbstractIntegrationTest;
 import com.example.cloud_box.common.TestConfig;
 import com.example.cloud_box.dto.LoginRequestDTO;
 import com.example.cloud_box.dto.RegisterRequestDTO;
-import com.example.cloud_box.service.UserFolderService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.AfterEach;
@@ -35,9 +34,6 @@ public class AuthIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
-
-    @Autowired
-    private UserFolderService userFolderService;
 
     @Autowired
     private RedisConnectionFactory connectionFactory;

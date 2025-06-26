@@ -64,7 +64,6 @@ All endpoints are under `/api`. Requests and responses use JSON (except file upl
 
 All error responses include a JSON body with an `error` field containing the error message.
 
-
 ### Swagger
 
 Interactive API docs available at `/swagger-ui.html`.
@@ -85,7 +84,19 @@ Interactive API docs available at `/swagger-ui.html`.
 - Integration tests for user and file services.
 - Uses Testcontainers for real database and MinIO testing.
 
-## Deployment
+## How to Run the Project Locally
 
-The project is planned to be deployed on DigitalOcean
+1. **Clone the repository**
+`git clone https://github.com/RustamLee/clowd-box.git`
+   - Navigate to the project directory: `cd clowd-box`
+2. Requires Docker and Docker Compose.
+   - Ensure they are installed on your machine.
+3. Run `docker-compose up` to start all services.
+4. Access all services at the following URLs:
+   - Frontend at `http://localhost:8080`.
+   - MinIO UI at  http://localhost:9001 (minioadmin / minioadminpass)
+   - Swagger UI at `http://localhost:8080/swagger-ui/index.html`
+
+## Deployment
+The project is planned to be deployed on DigitalOcean 
 

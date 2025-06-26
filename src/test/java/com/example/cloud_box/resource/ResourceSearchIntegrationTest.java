@@ -5,6 +5,11 @@ import com.example.cloud_box.dto.LoginRequestDTO;
 import com.example.cloud_box.dto.RegisterRequestDTO;
 import com.example.cloud_box.repository.UserRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.minio.ListObjectsArgs;
+import io.minio.MinioClient;
+import io.minio.RemoveObjectArgs;
+import io.minio.Result;
+import io.minio.messages.Item;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,15 +18,16 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -29,6 +35,9 @@ public class ResourceSearchIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private MinioClient minioClient;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -46,6 +55,7 @@ public class ResourceSearchIntegrationTest extends AbstractIntegrationTest {
 
     @BeforeEach
     void setUp() throws Exception {
+        clearMinioBucket();
         userRepository.deleteByUsername(USER1);
         userRepository.deleteByUsername(USER2);
 
@@ -108,4 +118,28 @@ public class ResourceSearchIntegrationTest extends AbstractIntegrationTest {
         assertTrue(bodyUser2.contains("user2_file.txt"), "User2 should see own file");
         assertFalse(bodyUser2.contains("user1_file.txt"), "User2 should NOT see user1's file");
     }
+    void clearMinioBucket() {
+        try {
+            Iterable<Result<Item>> results = minioClient.listObjects(
+                    ListObjectsArgs.builder().bucket(BUCKET).recursive(true).build());
+
+            for (Result<Item> result : results) {
+                deleteObjectIfExists(result.get().objectName());
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            fail("Failed to clear MinIO bucket before test: " + e.getMessage());
+        }
+    }
+    private void deleteObjectIfExists(String objectName) {
+        try {
+            minioClient.removeObject(RemoveObjectArgs.builder()
+                    .bucket(BUCKET)
+                    .object(objectName)
+                    .build());
+        } catch (Exception e) {
+            System.err.println("Could not delete object: " + objectName);
+        }
+    }
+
 }

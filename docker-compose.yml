@@ -47,6 +47,24 @@ services:
     command: server /data --console-address ":9001"
     volumes:
       - minio-data:/data
+  backend:
+    build: .
+    container_name: springboot
+    depends_on:
+      - mysql-db
+      - redis
+      - minio
+    ports:
+      - "8080:8080"
+    restart: on-failure
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
 
 volumes:
   mysql-data:
